@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PowerUpGammas · 视频索引</title>
+<style>/*__CSS__*/</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="stickyhead">
+    <div class="head">
+      <div class="brand">
+        <a class="ch" href="https://www.youtube.com/@PowerUpGammas" target="_blank" rel="noopener">PowerUpGammas</a>
+        <span class="sub">视频索引</span>
+      </div>
+      <div class="headmeta" id="headmeta"></div>
+      <div class="tools">
+        <label class="search">
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.4 10.4 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          <input id="search" type="search" placeholder="搜索标题" autocomplete="off">
+        </label>
+        <button id="btnPending" class="ghost" hidden></button>
+        <button id="btnExport" class="ghost" hidden></button>
+        <button id="btnReset" class="ghost" hidden>重置</button>
+        <button id="btnEdit" class="ghost">维护</button>
+      </div>
+    </div>
+    <nav class="tagbar" id="tagbar" aria-label="标签筛选"></nav>
+  </header>
+
+  <div class="legend">
+    <span class="lg"><i class="dot mention"></i>明确引用<em>点圆点展开该行全部引用</em></span>
+    <span class="lg"><i class="fbox"></i>系列关联<em>同系列的连续几期用方框圈出</em></span>
+    <span class="lg hint" id="selhint"></span>
+  </div>
+
+  <section class="board">
+    <div class="cols">
+      <div class="c-date">发布日期</div>
+      <div class="c-title">视频名称</div>
+      <div class="c-refs">引用</div>
+    </div>
+    <div class="list" id="list">
+      <svg class="links" id="links" aria-hidden="true"></svg>
+      <svg class="frames" id="frames" aria-hidden="true"></svg>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span id="footstat"></span>
+    <span class="sep">·</span>
+    <span>标签来自频道播放列表；引用按简介链接与系列结构推断，人工修订见 <code>data/manual.json</code></span>
+  </footer>
+
+  <div class="drawer" id="drawer" hidden>
+    <div class="drawer-head">
+      <strong>待确认的提及</strong>
+      <span class="drawer-sub" id="drawerSub"></span>
+      <button class="ghost sm" id="drawerClose">关闭</button>
+    </div>
+    <div class="drawer-body" id="drawerBody"></div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+</div>
+<script>//__DATA__</script>
+<script>//__JS__</script>
+</body>
+</html>
