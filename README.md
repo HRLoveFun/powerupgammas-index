@@ -69,6 +69,8 @@ PUG_VideoMap/
 
 `collect.py` 只负责取数，`build.py` 负责清洗与合并，两者都幂等。频道后续新增视频时：新视频自动进入列表、拿到日期、按播放列表分配标签、按标题规则并入既有系列，**`manual.json` 里的人工修订按视频 ID 保留，不受影响**。
 
+本节只到「本地生成 `index.html`」为止；要发布到线上（GitHub Pages）见文末第七节。
+
 ## 四、人工维护：`data/manual.json`
 
 以 YouTube 视频 ID 为索引，全部字段可选，缺省即「不覆盖」：
@@ -123,30 +125,54 @@ PUG_VideoMap/
 - 发布日期取 YouTube 返回的 `publishDate`（美西时区），与频道页面显示一致；极端情况（太平洋时间深夜上传）与本地日期可能差一天。
 - 播放列表归属是抓取当时的快照；频道调整播放列表后需重跑 `collect.py`。
 
-## 七、发布到 GitHub Pages
+## 七、发布与更新（GitHub Pages）
 
-页面已经托管在 GitHub Pages 上，仓库既是成品也是源码：
+### 仓库与站点
 
 - 线上地址：`https://<你的 GitHub 账号>.github.io/powerupgammas-index/`
 - 仓库地址：本仓库（`<你的 GitHub 账号>/powerupgammas-index`）
-- Pages 配置：`main` 分支 / 根目录；仓库根目录的 `.nojekyll` 让 Pages 直接当静态文件伺服，不做 Jekyll 处理
-- 仓库是 **public**：GitHub Pages 对私有仓库需要付费计划，本项目内容都是公开视频信息，公开仓库即可
+- Pages 配置：`main` 分支 / 根目录；根目录的 `.nojekyll` 让 Pages 直接当静态文件伺服，跳过 Jekyll 处理
+- 仓库是 **public**：GitHub Pages 对私有仓库需要付费计划；本项目内容都是公开视频信息，公开仓库即可
+
+### 从仓库打开页面
+
+| 入口 | 位置 |
+|---|---|
+| About 区链接 | 仓库首页右侧栏，`🔗` 那行（已在仓库设置里配好 homepage） |
+| Pages 设置页 | **Settings → Pages**，顶部 "Your site is live at …" 旁的 **Visit site** |
+| 直接输地址 | `https://<你的账号>.github.io/powerupgammas-index/` |
+
+> 注意：在仓库里点 `index.html` 只会看到源码——GitHub 只渲染 Markdown，HTML 一律按文本展示，`Raw` 也是纯文本。页面由 Pages 单独伺服，和仓库文件浏览是两套东西。
 
 ### 日常更新
 
-```bash
-./tools/deploy.sh             # 改完页面/数据后：重新构建 + 提交 + 推送
-./tools/deploy.sh --refresh   # 频道有新视频时：先重抓数据，再构建推送
-```
+| 改什么 | 命令 | 耗时 |
+|---|---|---|
+| 页面样式 / 交互 / 文案（`web/`） | `./tools/deploy.sh` | 十几秒 + Pages 30 秒 |
+| 频道有新视频、播放列表变了 | `./tools/deploy.sh --refresh` | 通常几十秒（有缓存只补新增） |
+| 手工调标签 / 引用 | 页面「维护」→ 导出 `manual.json` → 覆盖 `data/manual.json` → `./tools/deploy.sh` | 半分钟 |
 
-推送后 Pages 会在 30 秒左右自动重建，分享链接不变。等价的手动步骤：
+`deploy.sh` 依次做：构建 → 提交 → 推送 → 打印地址。推送后 Pages 自动重建，**分享链接始终不变**。
+
+构建是幂等的：数据没变时沿用原时间戳，所以没改动不会产生空提交（脚本会直接提示「没有变化」并退出）。等价的手动步骤：
 
 ```bash
 python3 tools/build.py
 git add -A && git commit -m "update" && git push origin main
 ```
 
+### 本地预览
+
+改完直接双击 `index.html` 就能看效果，不必先部署。文件是自包含的，双击、放到任意静态目录、或发给人都是同一份。
+
+### 三个容易出错的地方
+
+1. **`data/manual.json` 是唯一需要手填的文件。** 页面上「维护」模式的改动只存在浏览器 `localStorage` 里，必须点「导出修订」下载、覆盖到 `data/` 下、再部署，才会固化进线上。漏了这一步，换台电脑或清缓存就没了。
+2. **换机器要两步。** `gh auth login`（否则推不上去）+ 首次跑 `--refresh` 重建 `raw/` 缓存（约 3MB，没进仓库）。之后照常。
+3. **回滚。** 单次改动：`git log` 找到旧提交，`git revert <sha>` 后再 `deploy.sh`；整棵树回退：`git checkout <sha> -- .` 再提交。
+
 ### 说明
 
-- `raw/`（抓取缓存，约 3MB）和 `.workbuddy/`（本地工作记忆）已在 `.gitignore` 中排除，不会进仓库；换台机器 clone 下来跑一次 `collect.py` 即可重建缓存。
+- `raw/`（抓取缓存）和 `.workbuddy/`（本地工作记忆）已在 `.gitignore` 中排除，不会进仓库；换台机器 clone 下来跑一次 `collect.py` 即可重建。
 - 只想要成品：仓库根目录的 `index.html` 就是全部，拷走这一个文件放任何静态托管都能用。
+- 提交身份已设为中性（`PowerUpGammas Index <noreply@github.com>`，仅本仓库生效），不会带出个人信息。
