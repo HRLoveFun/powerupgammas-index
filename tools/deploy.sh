@@ -21,5 +21,10 @@ fi
 git add -A
 git commit -m "更新索引：$(date '+%Y-%m-%d %H:%M')"
 git push origin main
+
+# 从 remote 推出 Pages 地址，避免把账号名写死在文件里
+slug=$(git config --get remote.origin.url | sed -e 's#.*github\.com[:/]##' -e 's#\.git$##')
+owner=$(printf '%s' "$slug" | cut -d/ -f1 | tr 'A-Z' 'a-z')
+repo=$(printf '%s' "$slug" | cut -d/ -f2)
 echo "== 已推送，Pages 约 30 秒后生效 =="
-echo "   https://hrlovefun.github.io/powerupgammas-index/"
+echo "   https://$owner.github.io/$repo/"

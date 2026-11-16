@@ -127,7 +127,7 @@ PUG_VideoMap/
 
 页面已经托管在 GitHub Pages 上，仓库既是成品也是源码：
 
-- 线上地址：**https://hrlovefun.github.io/powerupgammas-index/**
+- 线上地址：`https://<你的 GitHub 账号>.github.io/powerupgammas-index/`
 - 仓库地址：本仓库（`<你的 GitHub 账号>/powerupgammas-index`）
 - Pages 配置：`main` 分支 / 根目录；仓库根目录的 `.nojekyll` 让 Pages 直接当静态文件伺服，不做 Jekyll 处理
 - 仓库是 **public**：GitHub Pages 对私有仓库需要付费计划，本项目内容都是公开视频信息，公开仓库即可
