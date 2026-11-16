@@ -271,8 +271,18 @@ def main():
         "tags": tags,
         "pending": pending_mentions(videos, set(desc_refs)),
     }
-    json.dump(payload, open(os.path.join(ROOT, "data", "index.json"), "w"),
-              ensure_ascii=False, indent=1)
+    # 只有数据真的变了才更新时间戳，保证重复构建不产生空提交
+    out_path = os.path.join(ROOT, "data", "index.json")
+    if os.path.exists(out_path):
+        try:
+            prev = json.load(open(out_path))
+            same = ({k: v for k, v in prev.items() if k != "generatedAt"} ==
+                    {k: v for k, v in payload.items() if k != "generatedAt"})
+            if same:
+                payload["generatedAt"] = prev.get("generatedAt", payload["generatedAt"])
+        except Exception:
+            pass
+    json.dump(payload, open(out_path, "w"), ensure_ascii=False, indent=1)
 
     tpl = open(os.path.join(WEB, "template.html")).read()
     css = open(os.path.join(WEB, "styles.css")).read()
