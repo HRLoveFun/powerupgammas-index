@@ -418,22 +418,22 @@
     const closeList = () => { if (list) { out += "</" + listType + ">"; list = null; listType = ""; } };
     blocks.forEach((b) => {
       const ind = (b.indent || 0) * 40;
-      const st = ind ? ' style="margin-left:' + ind + 'px"' : "";
+      const st = ind ? ' data-indent="' + b.indent + '" style="margin-left:' + ind + 'px"' : "";
       const inner = inlineToHtml(b.text || "");
       if (b.t === "hr") { closeList(); out += "<hr>"; return; }
       if (b.t === "code") { closeList(); out += '<pre' + st + '><code>' + escapeHtml(b.text) + "</code></pre>"; return; }
       if (b.t === "ul" || b.t === "ol") {
         const tag = b.t === "ul" ? "ul" : "ol";
         if (listType !== tag) { closeList(); out += "<" + tag + ">"; list = true; listType = tag; }
-        out += "<li>" + inner + "</li>";
+        out += "<li" + st + ">" + inner + "</li>";
         return;
       }
       closeList();
-      if (b.t === "h1") out += "<h1>" + inner + "</h1>";
-      else if (b.t === "h2") out += "<h2>" + inner + "</h2>";
-      else if (b.t === "h3") out += "<h3>" + inner + "</h3>";
+      if (b.t === "h1") out += "<h1" + st + ">" + inner + "</h1>";
+      else if (b.t === "h2") out += "<h2" + st + ">" + inner + "</h2>";
+      else if (b.t === "h3") out += "<h3" + st + ">" + inner + "</h3>";
       else if (b.t === "quote") out += "<blockquote" + st + ">" + inner + "</blockquote>";
-      else if (b.text) out += "<p>" + inner + "</p>";
+      else if (b.text) out += "<p" + st + ">" + inner + "</p>";
     });
     closeList();
     return out || "<p><br></p>";
@@ -459,10 +459,12 @@
       return out;
     };
     const indentOf = (el) => {
-      const m = (el.style && el.style.marginLeft) || "";
-      const px = parseInt(m, 10) || 0;
+      const attr = el.dataset && el.dataset.indent;
+      if (attr != null && attr !== "") return Math.max(0, Math.min(3, parseInt(attr, 10) || 0));
+      const px = parseInt((el.style && el.style.marginLeft) || "", 10) || 0;
       return px >= 100 ? 3 : px >= 60 ? 2 : px >= 20 ? 1 : 0;
     };
+    const padOf = (el) => "  ".repeat(indentOf(el));
     const walk = (node, prefix) => {
       node.childNodes.forEach((n) => {
         if (n.nodeType === 3) {
@@ -488,10 +490,10 @@
           });
           return;
         }
-        if (tag === "H1") { lines.push("# " + inline(n)); return; }
-        if (tag === "H2") { lines.push("## " + inline(n)); return; }
-        if (tag === "H3") { lines.push("### " + inline(n)); return; }
-        if (tag === "BLOCKQUOTE") { lines.push("> " + inline(n)); return; }
+        if (tag === "H1") { lines.push(padOf(n) + "# " + inline(n)); return; }
+        if (tag === "H2") { lines.push(padOf(n) + "## " + inline(n)); return; }
+        if (tag === "H3") { lines.push(padOf(n) + "### " + inline(n)); return; }
+        if (tag === "BLOCKQUOTE") { lines.push(padOf(n) + "> " + inline(n)); return; }
         if (tag === "PRE") { lines.push("```\n" + n.textContent + "\n```"); return; }
         if (tag === "HR") { lines.push("---"); return; }
         if (BLOCK_TAGS.test(tag)) {
@@ -499,7 +501,7 @@
           const hasBlock = Array.from(n.children).some((c) => BLOCK_TAGS.test(c.nodeName));
           if (hasBlock) { walk(n, prefix); return; }
           const text = inline(n).trim();
-          if (text) lines.push(prefix + text);
+          if (text) lines.push((prefix || padOf(n)) + text);
           return;
         }
         const t = inline(n).trim();
@@ -577,11 +579,18 @@
     };
 
     const onKey = (e) => {
-      if (e.key === "Tab") {
-        e.preventDefault();
-        document.execCommand(e.shiftKey ? "outdent" : "indent");
-        emit();
-      }
+      if (e.key !== "Tab") return;
+      e.preventDefault();
+      const block = currentBlock() || host.lastElementChild;
+      if (!block) return;
+      const attr = block.dataset.indent;
+      const px = parseInt((block.style && block.style.marginLeft) || "", 10) || 0;
+      const cur = attr != null && attr !== "" ? (parseInt(attr, 10) || 0)
+        : (px >= 100 ? 3 : px >= 60 ? 2 : px >= 20 ? 1 : 0);
+      const next = Math.max(0, Math.min(3, e.shiftKey ? cur - 1 : cur + 1));
+      block.dataset.indent = String(next);
+      block.style.marginLeft = next ? next * 40 + "px" : "";
+      emit();
     };
 
     host.addEventListener("input", onInput);
