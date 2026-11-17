@@ -3,65 +3,12 @@
   "_schema": {
     "tags": "{videoId: {add: [tagId], remove: [tagId]}}  手工增删标签",
     "refs": "{videoId: {add: [{to, type, note}], remove: [targetVideoId]}}  手工增删引用；type 取值 mention|series",
-    "tagDefs": "[{id, label, color}]  新增自定义标签",
+    "tagDefs": "[{id, label, color, hidden?}]  新增/改名/换色/隐藏标签；id 与播放列表标签相同即为覆盖，hidden:true 为删除",
     "pendingDismissed": "[videoId]  已审阅并忽略的待确认提及",
     "notes": "{videoId: \"markdown 文本\"}  行内笔记"
   },
-  "tags": {
-    "PQ97853HKIM": {
-      "add": [
-        "tg-jjjdw0l"
-      ],
-      "remove": [
-        "PLFzeuKbRQ3c2xUmsl8VZTZiBuB6iV-F87"
-      ]
-    },
-    "pZRmCv-kfmc": {
-      "add": [
-        "tg-jjjdw0l"
-      ],
-      "remove": []
-    },
-    "5htrW5Rb94s": {
-      "add": [
-        "tg-jjjdw0l"
-      ],
-      "remove": []
-    },
-    "P2meKhfe6vE": {
-      "add": [
-        "tg-jjjdw0l"
-      ],
-      "remove": [
-        "PLFzeuKbRQ3c2xUmsl8VZTZiBuB6iV-F87",
-        "PLFzeuKbRQ3c0r5qcqg2AA1TbLngDITGsV"
-      ]
-    },
-    "KhwfPsGTt1I": {
-      "add": [
-        "tg-jjjdw0l"
-      ],
-      "remove": [
-        "PLFzeuKbRQ3c0SPg4JsJzgnASUAi8vRlhu",
-        "PLFzeuKbRQ3c2xUmsl8VZTZiBuB6iV-F87"
-      ]
-    }
-  },
-  "refs": {
-    "PQ97853HKIM": {
-      "add": [
-        {
-          "to": "9noF0cXjSUg",
-          "type": "mention"
-        },
-        {
-          "to": "4ADG3ZgD98U",
-          "type": "mention"
-        }
-      ],
-      "remove": []
-    }
-  },
+  "tags": {},
+  "refs": {},
   "notes": {},
   "tagDefs": [
     {
