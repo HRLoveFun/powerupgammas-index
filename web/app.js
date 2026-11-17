@@ -77,8 +77,14 @@
     }
     return window.__MANUAL__ ? Object.assign(emptyManual(), JSON.parse(JSON.stringify(window.__MANUAL__))) : emptyManual();
   }
+  // 「有本地修订」= 存在未同步的改动；仅仅是存过一份不算
   const hasLocal = () => {
-    try { return !!localStorage.getItem(LSKEY); } catch (e) { return false; }
+    try {
+      const raw = localStorage.getItem(LSKEY);
+      if (!raw) return false;
+      const o = JSON.parse(raw);
+      return !!o._pending;
+    } catch (e) { return false; }
   };
 
   function mergeTags(v) {
@@ -1960,6 +1966,7 @@
         updateSaveState();
         toast("已恢复本地修订：笔记 " + c.notes + " · 标签 " + c.tags + " · 引用 " + c.refs);
       }
+      updateSaveState();
     }
 
     // 起页面后再去拉一次线上版本（file:// 下自动跳过）
