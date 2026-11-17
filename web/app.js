@@ -34,7 +34,26 @@
   };
 
   DATA.videos.forEach((v) => (S.byId[v.id] = v));
-  DATA.tags.forEach((t) => (S.tagById[t.id] = t));
+  function rebuildTagIndex() {
+    const map = new Map();
+    DATA.tags.forEach((t) => map.set(t.id, Object.assign({}, t)));
+    (S.manual.tagDefs || []).forEach((d) => {
+      if (!d || !d.id) return;
+      if (d.hidden) { map.delete(d.id); return; }
+      const cur = map.get(d.id);
+      if (cur) {
+        if (d.label) { cur.label = d.label; cur.full = d.label; }
+        if (d.color) cur.color = d.color;
+      } else {
+        const label = d.label || d.id;
+        map.set(d.id, { id: d.id, label: label, full: label, color: d.color || "#8a8f98", source: "manual" });
+      }
+    });
+    S.tags = Array.from(map.values());
+    S.tagById = {};
+    S.tags.forEach((t) => (S.tagById[t.id] = t));
+  }
+  rebuildTagIndex();
 
   /* ---------------- manual overlay ---------------- */
   function emptyManual() {
@@ -82,6 +101,7 @@
   }
 
   function recompute() {
+    rebuildTagIndex();
     const notes = S.manual.notes || {};
     S.videos.forEach((v) => {
       v.tags = mergeTags(v);
@@ -222,9 +242,9 @@
     bar.appendChild(all);
 
     const groups = [
-      DATA.tags.filter((t) => t.source === "playlist"),
-      DATA.tags.filter((t) => t.source === "manual"),
-      DATA.tags.filter((t) => t.source === "system"),
+      S.tags.filter((t) => t.source === "playlist"),
+      S.tags.filter((t) => t.source === "manual"),
+      S.tags.filter((t) => t.source === "system"),
     ];
     groups.forEach((g) => {
       if (!g.length) return;
@@ -237,7 +257,7 @@
         if (!n) return;
         const b = el("button", "tag" + (S.sel.has(t.id) ? " on" : ""));
         b.style.setProperty("--tc", t.color);
-        b.title = t.full + "（" + n + " 期）";
+        b.title = (t.full || t.label) + "（" + n + " 期）";
         b.setAttribute("aria-pressed", S.sel.has(t.id) ? "true" : "false");
         const sw = el("span", "sw");
         const lb = el("span", null, t.label);
@@ -618,7 +638,7 @@
     const r1 = el("div", "ed-row");
     r1.appendChild(el("div", "ed-label", "标签"));
     const b1 = el("div", "ed-body");
-    DATA.tags.filter((t) => t.source !== "system").forEach((t) => {
+    S.tags.filter((t) => t.source !== "system").forEach((t) => {
       const on = v.tags.indexOf(t.id) >= 0;
       const c = el("button", "tag mini" + (on ? " on" : ""));
       c.style.setProperty("--tc", t.color);
@@ -632,6 +652,16 @@
       };
       b1.appendChild(c);
     });
+
+    const mk = el("button", "tag mini add", "＋ 新建标签");
+    mk.onclick = (ev) => { ev.stopPropagation(); openTagManager({ assignTo: v.id }); };
+    b1.appendChild(mk);
+
+    const mng = el("button", "ghost sm", "管理");
+    mng.title = "改名 · 换色 · 删除";
+    mng.onclick = (ev) => { ev.stopPropagation(); openTagManager(); };
+    b1.appendChild(mng);
+
     r1.appendChild(b1);
     box.appendChild(r1);
 
@@ -1119,6 +1149,184 @@
     mask.addEventListener("click", (e) => { if (e.target === mask) mask.remove(); });
     document.body.appendChild(mask);
     setTimeout(() => repoIn.focus(), 30);
+  }
+
+  /* ---------------- 标签增删改 ---------------- */
+  const tagDefs = () => S.manual.tagDefs || (S.manual.tagDefs = []);
+  const findDef = (id) => tagDefs().find((d) => d.id === id);
+
+  function refreshEditor() {
+    if (!S.openEditor) return;
+    const row = S.rows[S.openEditor];
+    const box = row && row.querySelector(".editor");
+    if (box) buildEditor(box, S.byId[S.openEditor]);
+  }
+
+  function createTag(label, color) {
+    const clean = String(label || "").trim();
+    if (!clean) return null;
+    const id = "tg-" + Math.random().toString(36).slice(2, 9);
+    tagDefs().push({ id: id, label: clean, color: color || "#8a8f98" });
+    commit();
+    return id;
+  }
+
+  function renameTag(id, label) {
+    const clean = String(label || "").trim();
+    if (!clean) return;
+    const d = findDef(id);
+    if (d) { d.label = clean; delete d.hidden; }
+    else tagDefs().push({ id: id, label: clean });
+    commit();
+    refreshEditor();
+  }
+
+  function recolorTag(id, color) {
+    if (!/^#[0-9a-f]{6}$/i.test(color)) return;
+    const d = findDef(id);
+    if (d) { d.color = color; delete d.hidden; }
+    else tagDefs().push({ id: id, color: color });
+    commit();
+    refreshEditor();
+  }
+
+  function deleteTag(id) {
+    const t = S.tagById[id];
+    if (t && t.source === "system") { toast("系统标签不能删除"); return; }
+    const defs = tagDefs();
+    const i = defs.findIndex((d) => d.id === id);
+    // 保留名称与颜色，否则自定义标签删掉后就没法恢复
+    const rec = { id: id, hidden: true };
+    const cur = i >= 0 ? defs[i] : null;
+    if (cur && cur.label) rec.label = cur.label;
+    if (cur && cur.color) rec.color = cur.color;
+    if (!rec.label && t) rec.label = t.label;
+    if (!rec.color && t) rec.color = t.color;
+    if (i >= 0) defs[i] = rec; else defs.push(rec);
+    S.sel.delete(id);
+    commit();
+    refreshEditor();
+  }
+
+  function restoreTag(id) {
+    const defs = tagDefs();
+    const i = defs.findIndex((d) => d.id === id);
+    if (i >= 0) {
+      const base = DATA.tags.find((t) => t.id === id);
+      // 内置标签：删掉覆盖记录即可回到原样；自定义标签：只去掉隐藏标记
+      if (base) defs.splice(i, 1);
+      else delete defs[i].hidden;
+    }
+    commit();
+    refreshEditor();
+  }
+
+  function hiddenTags() {
+    const out = [];
+    tagDefs().forEach((d) => {
+      if (!d.hidden) return;
+      const base = DATA.tags.find((t) => t.id === d.id);
+      out.push(d.label || (base && base.label) || d.id);
+    });
+    return out;
+  }
+
+  function openTagManager(opts) {
+    const o = opts || {};
+    if (document.querySelector(".modal")) return;
+    const mask = el("div", "modal");
+    const box = el("div", "modal-box taggedit");
+    box.appendChild(el("h3", null, "标签管理"));
+    box.appendChild(el("p", "modal-hint",
+      "改名或换色立即生效，影响所有视频；删除会从全部视频上移除该标签，之后可以恢复。"));
+
+    const list = el("div", "taglist");
+    box.appendChild(list);
+
+    const add = el("div", "tagadd");
+    const addName = el("input", "tname");
+    addName.placeholder = "新标签名称";
+    addName.maxLength = 24;
+    const addColor = el("input", "tsw");
+    addColor.type = "color";
+    addColor.value = "#4a90d9";
+    const addBtn = el("button", "primary", "新增");
+    add.append(addColor, addName, addBtn);
+    box.appendChild(add);
+
+    const render = () => {
+      list.textContent = "";
+      S.tags.filter((t) => t.source !== "system").forEach((t) => {
+        const n = S.videos.filter((v) => v.tags.indexOf(t.id) >= 0).length;
+        const row = el("div", "tagrow");
+
+        const c = el("input", "tsw");
+        c.type = "color";
+        c.value = t.color;
+        let colorT = null;
+        c.oninput = () => {
+          clearTimeout(colorT);
+          colorT = setTimeout(() => recolorTag(t.id, c.value), 260);
+        };
+        row.appendChild(c);
+
+        const nm = el("input", "tname");
+        nm.value = t.label;
+        nm.maxLength = 24;
+        nm.onchange = () => renameTag(t.id, nm.value);
+        row.appendChild(nm);
+
+        row.appendChild(el("span", "tcount", String(n)));
+
+        const del = el("button", "tx", "删除");
+        del.onclick = () => {
+          if (!confirm("删除标签「" + t.label + "」？将从 " + n + " 个视频上移除，之后可恢复。")) return;
+          deleteTag(t.id);
+          render();
+        };
+        row.appendChild(del);
+        list.appendChild(row);
+      });
+
+      const hidden = tagDefs().filter((d) => d.hidden);
+      if (hidden.length) {
+        list.appendChild(el("div", "tagsec", "已删除"));
+        hidden.forEach((d) => {
+          const base = DATA.tags.find((t) => t.id === d.id);
+          const name = d.label || (base && base.label) || d.id;
+          const row = el("div", "tagrow gone");
+          row.appendChild(el("span", "tname static", name));
+          const back = el("button", "ghost sm", "恢复");
+          back.onclick = () => { restoreTag(d.id); render(); };
+          row.appendChild(back);
+          list.appendChild(row);
+        });
+      }
+    };
+
+    addBtn.onclick = () => {
+      const id = createTag(addName.value, addColor.value);
+      if (!id) { addName.focus(); return; }
+      if (o.assignTo) setTag(o.assignTo, id, true);
+      addName.value = "";
+      addName.focus();
+      render();
+      refreshEditor();
+      toast("已新增标签「" + S.tagById[id].label + "」" + (o.assignTo ? "并加到该行" : ""));
+    };
+    addName.onkeydown = (e) => { if (e.key === "Enter") addBtn.click(); };
+
+    const close = el("button", "ghost", "关闭");
+    close.onclick = () => mask.remove();
+    const acts = el("div", "modal-actions");
+    acts.appendChild(close);
+    box.appendChild(acts);
+
+    mask.appendChild(box);
+    mask.addEventListener("click", (e) => { if (e.target === mask) mask.remove(); });
+    document.body.appendChild(mask);
+    render();
+    setTimeout(() => addName.focus(), 30);
   }
 
   /* ---------------- 行内笔记 ---------------- */

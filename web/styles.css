@@ -584,3 +584,58 @@ button.primary:disabled{opacity:.6;cursor:default}
 .modal label.modal-check input[type=checkbox]{
   width:14px;height:14px;margin:0;accent-color:#1f6feb;flex:none;
 }
+
+/* ---------- 标签管理 ---------- */
+.tag.mini.add{
+  border-style:dashed;color:#8b939d;background:transparent;
+}
+.tag.mini.add:hover{color:#cfe2ff;border-color:#3a5a86}
+.modal-box.taggedit{width:min(520px,100%)}
+.taglist{
+  max-height:46vh;overflow:auto;margin:2px 0 12px;
+  border-top:1px solid #1c2026;border-bottom:1px solid #1c2026;
+}
+.tagrow{
+  display:flex;align-items:center;gap:8px;padding:6px 2px;
+  border-bottom:1px solid #16191e;
+}
+.tagrow:last-child{border-bottom:0}
+.tagrow .tsw{
+  width:20px;height:20px;padding:0;border:1px solid #2a3038;border-radius:5px;
+  background:transparent;cursor:pointer;flex:none;
+}
+.tagrow .tsw::-webkit-color-swatch-wrapper{padding:2px}
+.tagrow .tsw::-webkit-color-swatch{border:0;border-radius:3px}
+.tagrow .tname{
+  flex:1;min-width:0;height:28px;padding:0 8px;border-radius:6px;
+  border:1px solid transparent;background:transparent;color:#e6e3de;
+  font-family:var(--sans);font-size:12.5px;outline:0;
+}
+.tagrow .tname:hover{border-color:#232830}
+.tagrow .tname:focus{border-color:#3a424c;background:#0c0f12}
+.tagrow .tname.static{color:#8b939d}
+.tagrow .tcount{
+  font-family:var(--mono);font-size:10.5px;color:#5f6670;min-width:28px;text-align:right;
+}
+.tagrow .tx{
+  height:24px;padding:0 8px;border-radius:6px;cursor:pointer;flex:none;
+  border:1px solid #3a2020;background:#1b1214;color:#d08a8a;font-size:11px;
+}
+.tagrow .tx:hover{background:#241618;color:#f0a8a8}
+.tagrow.gone .tname{color:#6b7280;text-decoration:line-through}
+.tagsec{
+  font-size:10.5px;letter-spacing:.1em;color:#5f6670;padding:8px 2px 4px;
+}
+.tagadd{display:flex;gap:8px;align-items:center}
+.tagadd .tsw{
+  width:28px;height:28px;padding:0;border:1px solid #2a3038;border-radius:6px;
+  background:transparent;cursor:pointer;flex:none;
+}
+.tagadd .tsw::-webkit-color-swatch-wrapper{padding:3px}
+.tagadd .tsw::-webkit-color-swatch{border:0;border-radius:3px}
+.tagadd .tname{
+  flex:1;min-width:0;height:30px;padding:0 9px;border-radius:6px;
+  border:1px solid #232830;background:#0c0f12;color:#e6e3de;
+  font-size:12.5px;outline:0;
+}
+.tagadd .tname:focus{border-color:#3a424c}
