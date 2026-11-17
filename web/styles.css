@@ -401,18 +401,22 @@ button.ghost .cnt{
 /* ---------- 行内笔记（只读展示） ---------- */
 .c-note{display:none}
 .c-note.has{
-  display:block;overflow:hidden;position:relative;
-  max-height:calc(1.62em * 3);margin-top:4px;font-size:12px;line-height:1.62;
-  color:#98a1ac;cursor:pointer;
+  display:block;margin-top:4px;font-size:12px;line-height:1.62;
+  color:#98a1ac;cursor:text;
+  /* 固定高度：行高不随笔记长短变化，超出的内容在框内滚动 */
+  height:calc(1.62em * 3);
+  overflow-y:auto;overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:thin;scrollbar-color:#333b45 transparent;
+  padding-right:6px;
 }
-.c-note.has.clipped::after{
-  content:"";position:absolute;left:0;right:0;bottom:0;height:1.5em;
-  background:linear-gradient(180deg,rgba(10,11,13,0),rgba(10,11,13,.92));
-  pointer-events:none;
-}
-.c-note.has.open{max-height:none}
-.c-note.has.open::after{display:none}
-.c-note.has:hover{color:#b6bec8}
+.c-note.has::-webkit-scrollbar{width:6px}
+.c-note.has::-webkit-scrollbar-thumb{background:#333b45;border-radius:3px}
+.c-note.has::-webkit-scrollbar-thumb:hover{background:#414b57}
+.c-note.has::-webkit-scrollbar-track{background:transparent}
+/* 开发版点文字即编辑 */
+.dev .c-note.has{cursor:pointer}
+.dev .c-note.has:hover{color:#b6bec8}
 .c-note p{margin:0 0 2px}
 .c-note p:last-child{margin:0}
 .c-note h1,.c-note h2,.c-note h3{font-size:12.5px;font-weight:600;color:#c3cad3;margin:4px 0 2px}

@@ -407,31 +407,22 @@
         const show = v.note && S.openNote !== v.id;
         cn.classList.toggle("has", !!show);
         cn.innerHTML = show ? NoteEditor.render(v.note) : "";
-        markNoteOverflow(cn);
-        if (show) {
-          cn.title = IS_DEV ? "点击展开 / 收起；点行内空白编辑" : "点击展开 / 收起";
+        if (show && IS_DEV) {
+          cn.title = "点击编辑笔记";
           cn.onclick = (e) => {
             e.stopPropagation();
-            // 有折起来的尾巴就展开/收起；本来就没折，开发版点它直接进编辑
-            if (cn.classList.contains("clipped") || cn.classList.contains("open")) {
-              cn.classList.toggle("open");
-              markNoteOverflow(cn);
-            } else if (IS_DEV) {
-              toggleNote(v.id);
-            }
+            // 正在笔记里划词（想复制）时不抢这次点击
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount && cn.contains(sel.anchorNode) && String(sel).trim()) return;
+            toggleNote(v.id);
           };
         } else {
+          // 公开版保持纯文本：没有点击行为，划词即可复制
           cn.onclick = null;
           cn.removeAttribute("title");
         }
       }
     });
-  }
-
-  // 只有真的超出三行才加渐隐，否则一两行的短笔记会被那条渐变盖住
-  function markNoteOverflow(cn) {
-    if (!cn || !cn.classList.contains("has") || !cn.offsetParent) return;
-    cn.classList.toggle("clipped", cn.scrollHeight > cn.clientHeight + 1);
   }
 
   /* ---------------- filtering ---------------- */
@@ -457,8 +448,6 @@
       const row = S.rows[v.id];
       row.classList.toggle("hidden", !show);
       row.classList.toggle("is-temp", show && !ok);
-      // 隐藏时量不出高度，重新显示后补量一次，否则长笔记收起时没有渐隐
-      if (show && v.note && S.openNote !== v.id) markNoteOverflow(row.querySelector(".c-note"));
       if (show) { shown++; yearOn[v.date.slice(0, 4)] = true; }
     });
     S.years.forEach((y) => y.el.classList.toggle("hidden", !yearOn[y.year]));
