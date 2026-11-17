@@ -82,10 +82,14 @@ button.ghost .cnt{
 }
 
 /* ---------- tag bar ---------- */
+.tagline{display:flex;align-items:flex-start;gap:8px;padding:0 0 10px}
 .tagbar{
+  flex:1;min-width:0;
   display:flex;flex-wrap:wrap;align-items:center;gap:5px;
-  padding:0 0 10px;
 }
+.tagtools{flex:none;display:flex;align-items:center;height:23px}
+.tagtools:empty{display:none}
+.tagtools button.ghost{height:23px;padding:0 9px;font-size:11px;white-space:nowrap}
 .tag{
   --tc:#8b95a3;
   display:inline-flex;align-items:center;gap:5px;height:23px;padding:0 8px;
@@ -247,14 +251,17 @@ button.ghost .cnt{
 .editor button.ghost{border-color:#2c3138;background:#15181c}
 
 /* ---------- 行编辑面板：标签 ---------- */
-.ed-ops{display:inline-flex;flex-wrap:wrap;gap:5px;margin-left:6px}
 .tagchip{
   display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 4px 0 8px;
   border-radius:12px;border:1px solid var(--line2);background:#15181c;
   font-size:11px;color:var(--text2);
 }
 .tagchip .sw{width:6px;height:6px;border-radius:50%;background:var(--tc);opacity:.85;flex:none}
-.tagchip .tn{color:#d6d3ce;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tagchip .tn{
+  color:#d6d3ce;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  cursor:pointer;
+}
+.tagchip .tn:hover{color:#9dc4ff}
 .tagchip .x{
   width:16px;height:16px;line-height:14px;text-align:center;border-radius:50%;
   color:#7b828c;cursor:pointer;font-size:13px;flex:none;
@@ -271,13 +278,13 @@ button.ghost .cnt{
 }
 .sub-hint{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sub-input{width:100%;min-width:0}
-.sub-list{max-height:190px;overflow:auto;display:flex;flex-direction:column;gap:1px}
+.sub-list{max-height:240px;overflow:auto;display:flex;flex-direction:column;gap:1px}
 .tg-hint,.tg-empty{font-size:11px;color:#6b7280;padding:5px 8px}
 .tg-item{
   display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:5px;
   cursor:pointer;font-size:12px;
 }
-.tg-item:hover{background:#1d2228}
+.tg-item:hover,.tg-item.cur{background:#1d2228}
 .tg-item .sw{width:7px;height:7px;border-radius:50%;background:var(--tc);flex:none}
 .tg-item .tn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#d6d3ce}
 .tg-item .tf{
@@ -285,17 +292,11 @@ button.ghost .cnt{
   font-size:10px;color:#6b7280;flex:none;
 }
 .tg-item .n{font-family:var(--mono);font-size:10px;color:#6f7680;flex:none}
-.ed-new{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.ed-new .tsw{
-  width:28px;height:28px;padding:0;border:1px solid #2a3038;border-radius:6px;
-  background:transparent;cursor:pointer;flex:none;
+.tg-create{
+  margin-top:3px;padding-top:7px;border-top:1px solid #232830;border-radius:0;
 }
-.ed-new .tname{
-  flex:1;min-width:130px;height:28px;padding:0 9px;border-radius:6px;
-  border:1px solid #232830;background:#0c0f12;color:#e6e3de;
-  font-family:var(--sans);font-size:12.5px;outline:0;
-}
-.ed-new .tname:focus{border-color:#3a424c}
+.tg-create .tn{color:#9dc4ff}
+.tg-create .plus{font-size:13px;color:#9dc4ff;width:7px;flex:none;line-height:1}
 
 .refitem{
   display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 4px 0 7px;
@@ -533,11 +534,14 @@ button.ghost .cnt{
   button.ghost{height:30px;padding:0 9px;font-size:11.5px}
   .modechip{font-size:9px;padding:1px 4px}
 
-  .tagbar{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;gap:6px;padding:0 0 9px;
+  .tagline{padding:0 0 9px;gap:6px}
+  .tagbar{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;gap:6px;padding:0;
     -webkit-overflow-scrolling:touch;scrollbar-width:none;
     -webkit-mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 26px),transparent 100%);
     mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 26px),transparent 100%)}
   .tagbar::-webkit-scrollbar{display:none}
+  .tagtools{height:26px}
+  .tagtools button.ghost{height:26px}
   .tag{flex:0 0 auto;height:26px;padding:0 9px;font-size:11.5px}
 
   .legend{gap:14px;padding:9px 0 3px;font-size:10px}
@@ -690,7 +694,9 @@ button.primary:disabled{opacity:.6;cursor:default}
 .tagrow .tname.static{color:#8b939d}
 .tagrow .tcount{
   font-family:var(--mono);font-size:10.5px;color:#5f6670;min-width:28px;text-align:right;
+  background:none;border:0;padding:2px 0;cursor:pointer;
 }
+.tagrow .tcount:hover{color:#9dc4ff;text-decoration:underline}
 .tagrow .tx{
   height:24px;padding:0 8px;border-radius:6px;cursor:pointer;flex:none;
   border:1px solid #3a2020;background:#1b1214;color:#d08a8a;font-size:11px;
