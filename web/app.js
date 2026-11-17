@@ -97,6 +97,50 @@
     return h;
   }
 
+  /* ---------------- 本地持久化 ---------------- */
+  let storageOK = true;
+  let storageWarned = false;
+
+  function persist() {
+    const d = new Date();
+    S.manual._savedAt = [d.getHours(), d.getMinutes(), d.getSeconds()]
+      .map((n) => String(n).padStart(2, "0")).join(":");
+    try {
+      localStorage.setItem(LSKEY, JSON.stringify(S.manual));
+      storageOK = true;
+    } catch (e) {
+      storageOK = false;
+      warnStorage();
+    }
+    S.dirty = false;
+    markSaved();
+  }
+
+  function markSaved() {
+    if (!IS_DEV) return;
+    const t = S.manual._savedAt || "";
+    const box = $("#saveState");
+    if (box) {
+      box.hidden = false;
+      box.textContent = storageOK ? (t ? "本地已保存 " + t : "本地存储已启用") : "本地存储不可用";
+      box.className = "savestate " + (storageOK ? "ok" : "err");
+    }
+    const np = document.querySelector(".np-status");
+    if (np) np.textContent = storageOK ? "已保存 " + t : "未保存";
+  }
+
+  function warnStorage() {
+    if (storageWarned) return;
+    storageWarned = true;
+    const b = el("div", "storagewarn");
+    b.innerHTML = "";
+    b.appendChild(el("b", null, "浏览器禁止本地存储"));
+    b.appendChild(document.createTextNode(
+      "（常见于无痕/隐私模式）。改动只在当前页面有效，关掉就没了。请换普通窗口打开，或改完立即点「导出修订」保存成文件。"));
+    document.body.appendChild(b);
+    setTimeout(() => b.remove(), 12000);
+  }
+
   /* ---------------- header ---------------- */
   function renderHead() {
     const vids = S.videos;
@@ -633,6 +677,7 @@
   });
 
   function setTag(vid, tagId, on) {
+    S.dirty = true;
     const m = S.manual.tags;
     const rule = m[vid] || (m[vid] = { add: [], remove: [] });
     rule.add = rule.add || []; rule.remove = rule.remove || [];
@@ -648,6 +693,7 @@
   }
 
   function setRef(vid, toId, on) {
+    S.dirty = true;
     const m = S.manual.refs;
     const rule = m[vid] || (m[vid] = { add: [], remove: [] });
     rule.add = rule.add || []; rule.remove = rule.remove || [];
@@ -667,24 +713,31 @@
     recompute();
     paintRows();
     Array.from(S.active).forEach((id) => { if (!S.byId[id] || !mentionTargets(S.byId[id]).length) S.active.delete(id); });
-    try { localStorage.setItem(LSKEY, JSON.stringify(S.manual)); S.dirty = true; } catch (e) {}
+    persist();
     renderTags();
     refreshDirty();
     applyFilter();
   }
 
+  function countEdits() {
+    const m = S.manual, notes = m.notes || {};
+    const nz = (r) => ((r && ((r.add || []).length || (r.remove || []).length)) ? 1 : 0);
+    return {
+      tags: Object.keys(m.tags || {}).reduce((a, k) => a + nz(m.tags[k]), 0),
+      refs: Object.keys(m.refs || {}).reduce((a, k) => a + nz(m.refs[k]), 0),
+      notes: Object.keys(notes).filter((k) => String(notes[k] || "").trim()).length,
+    };
+  }
+
   function refreshDirty() {
     const ex = $("#btnExport"), rs = $("#btnReset");
     if (!ex) return;
-    const notes = S.manual.notes || {};
-    const n = Object.keys(S.manual.tags).filter((k) => {
-      const r = S.manual.tags[k]; return (r.add || []).length || (r.remove || []).length;
-    }).length + Object.keys(S.manual.refs).filter((k) => {
-      const r = S.manual.refs[k]; return (r.add || []).length || (r.remove || []).length;
-    }).length + Object.keys(notes).filter((k) => String(notes[k] || "").trim()).length;
+    const c = countEdits();
+    const n = c.tags + c.refs + c.notes;
     ex.hidden = !n;
     rs.hidden = !n;
     ex.textContent = "导出修订 (" + n + ")";
+    ex.title = "笔记 " + c.notes + " · 标签 " + c.tags + " · 引用 " + c.refs;
   }
 
   function exportManual() {
@@ -694,6 +747,7 @@
       tagDefs: S.manual.tagDefs || [],
       pendingDismissed: S.manual.pendingDismissed || [],
     };
+    delete out._savedAt;
     const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -729,6 +783,7 @@
     const bar = el("div", "np-bar");
     bar.appendChild(el("span", "np-label", "笔记"));
     bar.appendChild(el("span", "np-tip", "Markdown：# 标题　- 列表　> 引用　**粗体**　`代码`"));
+    bar.appendChild(el("span", "np-status", ""));
     const done = el("button", "ghost sm np-done", "完成");
     done.onclick = (ev) => { ev.stopPropagation(); closeNote(); };
     bar.appendChild(done);
@@ -743,6 +798,7 @@
     });
     p._editor = ed;
     p.addEventListener("click", (ev) => ev.stopPropagation());
+    markSaved();
     setTimeout(() => ed.focus(), 40);
   }
 
@@ -762,11 +818,12 @@
 
   let noteT = null;
   function setNote(vid, md) {
+    S.dirty = true;
     const notes = S.manual.notes || (S.manual.notes = {});
     const val = String(md || "").trim();
     if (val) notes[vid] = md; else delete notes[vid];
     S.byId[vid].note = val;
-    try { localStorage.setItem(LSKEY, JSON.stringify(S.manual)); } catch (e) {}
+    persist();
     refreshDirty();
     clearTimeout(noteT);
     noteT = setTimeout(() => svgResize(), 260);
@@ -868,7 +925,7 @@
     S.manual.pendingDismissed = S.manual.pendingDismissed || [];
     if (S.manual.pendingDismissed.indexOf(vid) < 0) S.manual.pendingDismissed.push(vid);
     S.pending = S.pending.filter((p) => p.videoId !== vid);
-    try { localStorage.setItem(LSKEY, JSON.stringify(S.manual)); } catch (e) {}
+    persist();
     renderPending(); refreshDirty();
   }
 
@@ -946,7 +1003,27 @@
       clearTimeout(rt);
       rt = setTimeout(() => { svgResize(); }, 120);
     });
-    if (IS_DEV && hasLocal()) toast("已载入本地修订（含笔记）");
+    if (IS_DEV) {
+      // 关标签页/切后台时再落一次盘，避免移动端 Safari 不触发 beforeunload
+      const flush = () => { if (S.dirty) persist(); };
+      window.addEventListener("pagehide", flush);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") flush();
+      });
+
+      if (hasLocal()) {
+        const c = countEdits();
+        const box = $("#saveState");
+        if (box) {
+          box.hidden = false;
+          box.className = "savestate ok";
+          box.textContent = S.manual._savedAt
+            ? "本地修订 · 上次保存 " + S.manual._savedAt
+            : "已恢复本地修订";
+        }
+        toast("已恢复本地修订：笔记 " + c.notes + " · 标签 " + c.tags + " · 引用 " + c.refs);
+      }
+    }
   }
 
   init();

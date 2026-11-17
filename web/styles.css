@@ -516,3 +516,25 @@ button.ghost .cnt{
   .np,.editor,.toast,.row.flash{animation:none}
   *{scroll-behavior:auto}
 }
+
+/* ---------- 保存状态 ---------- */
+.savestate{
+  margin-left:auto;font-family:var(--mono);font-size:10.5px;
+  color:#6b7280;white-space:nowrap;
+}
+.savestate.ok{color:#7fbf7f}
+.savestate.err{color:#e08a8a}
+.np-status{
+  font-family:var(--mono);font-size:10.5px;color:#6b7280;
+  margin-left:auto;white-space:nowrap;
+}
+.np-status:empty{display:none}
+.np-done{margin-left:10px}
+.storagewarn{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:90;
+  max-width:min(560px,calc(100vw - 32px));
+  background:#241717;border:1px solid #5b2b2b;border-radius:9px;
+  padding:11px 15px;font-size:12px;line-height:1.6;color:#e6c9c9;
+  box-shadow:0 16px 40px rgba(0,0,0,.6);
+}
+.storagewarn b{color:#f0a8a8;margin-right:4px}
