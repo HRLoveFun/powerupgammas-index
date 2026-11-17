@@ -754,3 +754,23 @@ button.ghost.accent:hover{background:#14212f;border-color:#3a72b8}
 .ns-prev a{color:#78aef8}
 .ns-prev strong{color:#f2efe9;font-weight:650}
 .ns-prev hr{border:0;border-top:1px solid #2a3038;margin:8px 0}
+
+/* ---------- 笔记：模式切换 ---------- */
+.np-seg{display:inline-flex;border:1px solid #262c34;border-radius:7px;overflow:hidden;margin-left:2px}
+.np-seg .seg{
+  height:22px;padding:0 9px;border:0;background:transparent;cursor:pointer;
+  color:#6f7783;font-family:var(--sans);font-size:11px;letter-spacing:.02em;
+  transition:.14s;
+}
+.np-seg .seg:hover{color:#aab3bd}
+.np-seg .seg.on{background:#1b222b;color:#cfe2ff}
+.np-seg .seg + .seg{border-left:1px solid #262c34}
+
+/* 块缩进 */
+.ne-block[data-indent="1"]{margin-left:20px}
+.ne-block[data-indent="2"]{margin-left:40px}
+.ne-block[data-indent="3"]{margin-left:60px}
+
+/* 源码模式单栏 */
+.ns.ns-solo{grid-template-columns:1fr}
+.ns.ns-solo .ns-src{min-height:120px}

@@ -54,6 +54,8 @@
     const blocks = [];
     let inCode = false, buf = [];
     for (const line of lines) {
+      const lead = (line.match(/^[ \t]*/) || [""])[0].replace(/\t/g, "  ").length;
+      const indent = Math.min(3, Math.floor(lead / 2));
       if (/^\s*```/.test(line)) {
         if (inCode) { blocks.push({ t: "code", text: buf.join("\n") }); buf = []; inCode = false; }
         else inCode = true;
@@ -61,13 +63,14 @@
       }
       if (inCode) { buf.push(line); continue; }
       if (!line.trim()) continue;
+      const body = line.replace(/^\s+/, "");
       let m;
-      if ((m = line.match(/^(#{1,3})\s+(.*)$/))) blocks.push({ t: "h" + m[1].length, text: m[2] });
-      else if ((m = line.match(/^\s*[-*]\s+(.*)$/))) blocks.push({ t: "ul", text: m[1] });
-      else if ((m = line.match(/^\s*\d+\.\s+(.*)$/))) blocks.push({ t: "ol", text: m[1] });
-      else if ((m = line.match(/^>\s?(.*)$/))) blocks.push({ t: "quote", text: m[1] });
-      else if (HR.test(line)) blocks.push({ t: "hr", text: "" });
-      else blocks.push({ t: "p", text: line });
+      if ((m = body.match(/^(#{1,3})\s+(.*)$/))) blocks.push({ t: "h" + m[1].length, text: m[2], indent: indent });
+      else if ((m = body.match(/^[-*]\s+(.*)$/))) blocks.push({ t: "ul", text: m[1], indent: indent });
+      else if ((m = body.match(/^\d+\.\s+(.*)$/))) blocks.push({ t: "ol", text: m[1], indent: indent });
+      else if ((m = body.match(/^>\s?(.*)$/))) blocks.push({ t: "quote", text: m[1], indent: indent });
+      else if (HR.test(body)) blocks.push({ t: "hr", text: "" });
+      else blocks.push({ t: "p", text: body, indent: indent });
     }
     if (inCode && buf.length) blocks.push({ t: "code", text: buf.join("\n") });
     if (!blocks.length) blocks.push({ t: "p", text: "" });
@@ -76,16 +79,17 @@
 
   function blocksToMd(blocks) {
     return blocks.map((b) => {
+      const pad = "  ".repeat(b.indent || 0);
       switch (b.t) {
-        case "h1": return "# " + b.text;
-        case "h2": return "## " + b.text;
-        case "h3": return "### " + b.text;
-        case "ul": return "- " + b.text;
-        case "ol": return "1. " + b.text;
-        case "quote": return "> " + b.text;
-        case "hr": return "---";
-        case "code": return "```\n" + b.text + "\n```";
-        default: return b.text;
+        case "h1": return pad + "# " + b.text;
+        case "h2": return pad + "## " + b.text;
+        case "h3": return pad + "### " + b.text;
+        case "ul": return pad + "- " + b.text;
+        case "ol": return pad + "1. " + b.text;
+        case "quote": return pad + "> " + b.text;
+        case "hr": return pad + "---";
+        case "code": return pad + "```\n" + b.text + "\n```";
+        default: return pad + b.text;
       }
     }).join("\n");
   }
@@ -93,15 +97,17 @@
   function render(md) {
     const blocks = parseMd(md);
     return blocks.map((b) => {
+      const ind = (b.indent || 0) * 18;
+      const st = ind ? ' style="margin-left:' + ind + 'px"' : "";
       if (b.t === "hr") return '<hr class="ne-hr">';
-      if (b.t === "code") return '<pre class="ne-pre"><code>' + escapeHtml(b.text) + "</code></pre>";
+      if (b.t === "code") return '<pre class="ne-pre"' + st + '><code>' + escapeHtml(b.text) + '</code></pre>';
       const inner = inlineToHtml(b.text);
-      if (b.t === "p") return "<p>" + inner + "</p>";
-      if (b.t === "ul") return "<li>" + inner + "</li>";
-      if (b.t === "ol") return "<li>" + inner + "</li>";
-      if (b.t === "quote") return "<blockquote>" + inner + "</blockquote>";
+      if (b.t === "p") return "<p" + st + ">" + inner + "</p>";
+      if (b.t === "ul") return "<li" + st + ">" + inner + "</li>";
+      if (b.t === "ol") return "<li" + st + ">" + inner + "</li>";
+      if (b.t === "quote") return "<blockquote" + st + ">" + inner + "</blockquote>";
       const lv = b.t.slice(1);
-      return "<h" + lv + ">" + inner + "</h" + lv + ">";
+      return "<h" + lv + st + ">" + inner + "</h" + lv + ">";
     }).join("");
   }
 
@@ -153,7 +159,7 @@
       host.classList.add("ne");
       host.textContent = "";
       const blocks = parseMd(this.opts.value || "");
-      blocks.forEach((b) => host.appendChild(this.makeBlock(b.t, b.text)));
+      blocks.forEach((b) => host.appendChild(this.makeBlock(b.t, b.text, b.indent || 0)));
       host.addEventListener("keydown", (e) => this.onKeyDown(e));
       host.addEventListener("input", (e) => this.onInputEvent(e));
       host.addEventListener("paste", (e) => this.onPaste(e));
@@ -161,10 +167,11 @@
       this.renumber();
     }
 
-    makeBlock(type, text) {
+    makeBlock(type, text, indent) {
       const d = document.createElement("div");
       d.className = "ne-block";
       d.dataset.type = type;
+      d.dataset.indent = String(Math.max(0, Math.min(3, indent || 0)));
       d.setAttribute("contenteditable", "true");
       if (type === "hr") { d.setAttribute("contenteditable", "false"); d.textContent = ""; }
       else d.innerHTML = inlineToHtml(text || "");
@@ -192,6 +199,7 @@
       const bs = this.blocks().map((el) => ({
         t: el.dataset.type,
         text: el.dataset.type === "code" ? el.textContent : inlineToMd(el),
+        indent: parseInt(el.dataset.indent || "0", 10),
       }));
       return blocksToMd(bs.filter((b) => b.t === "hr" || b.t === "code" || b.text.trim() !== ""));
     }
@@ -263,6 +271,15 @@
         e.preventDefault();
         el.dataset.type = "code";
         el.textContent = "";
+        this.fire();
+        return;
+      }
+
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const cur = parseInt(el.dataset.indent || "0", 10);
+        const next = e.shiftKey ? Math.max(0, cur - 1) : Math.min(3, cur + 1);
+        el.dataset.indent = String(next);
         this.fire();
         return;
       }
@@ -353,17 +370,20 @@
     ta.value = opts.value || "";
     ta.placeholder = opts.placeholder || "写点什么……支持 Markdown：# 标题、- 列表、> 引用、**粗体**、`代码`";
 
+    const withPrev = opts.preview !== false;
     const prev = document.createElement("div");
     prev.className = "ns-prev";
-    host.append(ta, prev);
+    if (withPrev) host.append(ta, prev); else { host.classList.add("ns-solo"); host.append(ta); }
 
     const autosize = () => {
       ta.style.height = "auto";
       ta.style.height = Math.min(Math.max(ta.scrollHeight, 92), 460) + "px";
     };
     const paint = () => {
-      const v = ta.value;
-      prev.innerHTML = v.trim() ? render(v) : '<span class="ns-empty">预览区</span>';
+      if (withPrev) {
+        const v = ta.value;
+        prev.innerHTML = v.trim() ? render(v) : '<span class="ns-empty">预览区</span>';
+      }
       autosize();
     };
 

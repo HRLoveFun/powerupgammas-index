@@ -1703,7 +1703,15 @@
   function buildNotePanel(p, v) {
     const bar = el("div", "np-bar");
     bar.appendChild(el("span", "np-label", "笔记"));
-    bar.appendChild(el("span", "np-tip", "Markdown 源码 · Tab 缩进 / Shift+Tab 退回"));
+
+    const seg = el("span", "np-seg");
+    const bW = el("button", "seg on", "所见即所得");
+    const bS = el("button", "seg", "源码");
+    bW.title = "输入时即时渲染，Enter 新建块，Tab 缩进";
+    bS.title = "直接编辑 Markdown 原文";
+    seg.append(bW, bS);
+    bar.appendChild(seg);
+
     bar.appendChild(el("span", "np-status", ""));
     const done = el("button", "ghost sm np-done", "完成");
     done.onclick = (ev) => { ev.stopPropagation(); closeNote(); };
@@ -1713,14 +1721,39 @@
     const body = el("div", "np-body");
     p.appendChild(body);
 
-    const ed = NoteEditor.createSource(body, {
-      value: v.note || "",
-      onInput: (md) => setNote(v.id, md),
-    });
-    p._editor = ed;
+    let cur = v.note || "";
+    let ed = null;
+    const getMode = () => (localStorage.getItem("pug.noteMode") === "src" ? "src" : "wys");
+    const putMode = (m) => { try { localStorage.setItem("pug.noteMode", m); } catch (e) {} };
+
+    function mount() {
+      if (ed && typeof ed.getValue === "function") cur = ed.getValue();
+      body.textContent = "";
+      const m = getMode();
+      bW.classList.toggle("on", m === "wys");
+      bS.classList.toggle("on", m === "src");
+      if (m === "wys") {
+        ed = NoteEditor.create(body, {
+          value: cur,
+          onInput: (md) => { cur = md; setNote(v.id, md); },
+        });
+      } else {
+        ed = NoteEditor.createSource(body, {
+          value: cur,
+          preview: false,
+          onInput: (md) => { cur = md; setNote(v.id, md); },
+        });
+      }
+      p._editor = ed;
+      setTimeout(() => ed.focus(), 30);
+    }
+
+    bW.onclick = (e) => { e.stopPropagation(); if (getMode() !== "wys") { putMode("wys"); mount(); } };
+    bS.onclick = (e) => { e.stopPropagation(); if (getMode() !== "src") { putMode("src"); mount(); } };
+
     p.addEventListener("click", (ev) => ev.stopPropagation());
+    mount();
     markSaved();
-    setTimeout(() => ed.focus(), 40);
   }
 
   function closeNote() {
