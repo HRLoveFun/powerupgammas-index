@@ -344,7 +344,7 @@
       if (IS_DEV) {
         row.addEventListener("click", (ev) => {
           if (S.pick) return;
-          if (ev.target.closest("a,.badge,.penbtn,button,.np")) return;
+          if (ev.target.closest("a,.badge,.penbtn,button,.np,.editor")) return;
           toggleNote(v.id);
         });
       }
@@ -578,12 +578,6 @@
         .sort((a, b) => a.offsetTop - b.offsetTop);
       if (rows.length < 2) return;
 
-      // 简介里互相列过链接的同系列视频，在提示里点出来
-      const linked = ids.some((id) => {
-        const v = S.byId[id];
-        return v && v.refs.some((r) => r.type === "mention" && sameSeries(v, S.byId[r.to]));
-      });
-
       const runs = [];
       let run = [rows[0]];
       for (let i = 1; i < rows.length; i++) {
@@ -594,9 +588,6 @@
       runs.push(run);
 
       const g = svgEl("g", {});
-      const t = document.createElementNS(SVGNS, "title");
-      t.textContent = "系列：" + name + "（共 " + ids.length + " 期" + (linked ? "，简介中互有链接" : "") + "）";
-      g.appendChild(t);
 
       const boxes = runs.map((seg) => {
         const last = seg[seg.length - 1];
@@ -679,36 +670,58 @@
   function buildEditor(box, v) {
     box.textContent = "";
     box._refsBody = null;
+    // 面板会被反复重建，把「当前展开的是哪个子面板」挂在节点上
+    if (!box._tagUI) box._tagUI = { mode: null, q: "" };
+    const ui = box._tagUI;
 
     // 标签
     const r1 = el("div", "ed-row");
     r1.appendChild(el("div", "ed-label", "标签"));
     const b1 = el("div", "ed-body");
-    S.tags.filter((t) => t.source !== "system").forEach((t) => {
-      const on = v.tags.indexOf(t.id) >= 0;
-      const c = el("button", "tag mini" + (on ? " on" : ""));
-      c.style.setProperty("--tc", t.color);
-      const sw = el("span", "sw");
-      c.append(sw, el("span", null, t.label));
-      c.onclick = (ev) => {
+
+    // 只列本期已有的标签，不把全局标签库整排倒出来
+    const cur = (v.tags || []).filter((id) => id !== "unfiled" && S.tagById[id]);
+    if (!cur.length) b1.appendChild(el("span", "lg dim", "本期暂无标签"));
+    cur.forEach((id) => {
+      const t = S.tagById[id];
+      const chip = el("span", "tagchip");
+      chip.style.setProperty("--tc", t.color || "#8a8f98");
+      chip.append(el("span", "sw"), el("span", "tn", t.label));
+      const x = el("span", "x", "×");
+      x.setAttribute("aria-label", "从本期移除标签「" + t.label + "」");
+      x.onclick = (ev) => {
         ev.stopPropagation();
-        setTag(v.id, t.id, !on);
+        setTag(v.id, id, false);
         buildEditor(box, S.byId[v.id]);
         paintRows(); applyFilter();
       };
-      b1.appendChild(c);
+      chip.appendChild(x);
+      b1.appendChild(chip);
     });
 
-    const mk = el("button", "tag mini add", "＋ 新建标签");
-    mk.onclick = (ev) => { ev.stopPropagation(); openTagManager({ assignTo: v.id }); };
-    b1.appendChild(mk);
-
-    const mng = el("button", "ghost sm", "管理");
-    mng.onclick = (ev) => { ev.stopPropagation(); openTagManager(); };
-    b1.appendChild(mng);
+    const ops = el("span", "ed-ops");
+    const bAdd = el("button", "ghost sm" + (ui.mode === "add" ? " accent" : ""), "＋ 新增视频标签");
+    bAdd.onclick = (ev) => {
+      ev.stopPropagation();
+      ui.mode = ui.mode === "add" ? null : "add";
+      ui.q = "";
+      buildEditor(box, v);
+    };
+    const bNew = el("button", "ghost sm" + (ui.mode === "new" ? " accent" : ""), "＋ 新增全局标签");
+    bNew.onclick = (ev) => {
+      ev.stopPropagation();
+      ui.mode = ui.mode === "new" ? null : "new";
+      buildEditor(box, v);
+    };
+    const bMng = el("button", "ghost sm", "管理全局标签");
+    bMng.onclick = (ev) => { ev.stopPropagation(); openTagManager(); };
+    ops.append(bAdd, bNew, bMng);
+    b1.appendChild(ops);
 
     r1.appendChild(b1);
     box.appendChild(r1);
+    if (ui.mode === "add") box.appendChild(buildTagAddPanel(box, v, ui));
+    else if (ui.mode === "new") box.appendChild(buildTagNewPanel(box, v, ui));
 
     // 引用：全部列出，同系列用虚线，不再隐藏
     const r2 = el("div", "ed-row");
@@ -719,20 +732,7 @@
     r2.appendChild(b2);
     box.appendChild(r2);
 
-    // 笔记：列表里的笔记只负责「看」，编辑入口放在这里，别让人靠猜空白
-    const r3 = el("div", "ed-row");
-    r3.appendChild(el("div", "ed-label", "笔记"));
-    const b3 = el("div", "ed-body");
-    const nbtn = el("button", "ghost sm", v.note ? "编辑笔记" : "写笔记");
-    nbtn.onclick = (ev) => { ev.stopPropagation(); toggleNote(v.id); };
-    b3.appendChild(nbtn);
-    if (v.note) {
-      const head = (v.note.split("\n").find((l) => l.trim()) || "").replace(/^(#{1,3}\s+|[-*]\s+|\d+\.\s+|>\s?)+/, "");
-      b3.appendChild(el("span", "ed-note", head.slice(0, 42) + (head.length > 42 ? "…" : "")));
-    }
-    r3.appendChild(b3);
-    box.appendChild(r3);
-
+    // 笔记不在这里放入口：点笔记文字（或行内空白）直接进编辑器
     const r4 = el("div", "ed-row");
     r4.appendChild(el("div", "ed-label", ""));
     const b4 = el("div", "ed-body");
@@ -747,6 +747,147 @@
     box.appendChild(r4);
 
     if (S.pick && S.pick.from === v.id) box.appendChild(buildPicker(v));
+  }
+
+  /* ---------------- 标签三个入口 ---------------- */
+  // 全局标签库里还没挂到本期的标签，按使用次数排序
+  function tagPool(v) {
+    const used = new Set((v.tags || []).filter((id) => S.tagById[id]));
+    return S.tags
+      .filter((t) => t.source !== "system" && !used.has(t.id))
+      .map((t) => ({ t: t, n: S.videos.filter((x) => x.tags.indexOf(t.id) >= 0).length }))
+      .sort((a, b) => b.n - a.n || a.t.label.localeCompare(b.t.label, "zh"));
+  }
+
+  function renderTagCandidates(host, box, v, ui) {
+    host.textContent = "";
+    const q = (ui.q || "").trim().toLowerCase();
+    const toks = q ? q.split(/\s+/).filter(Boolean) : [];
+    let pool = tagPool(v);
+    if (toks.length) {
+      pool = pool.filter((o) => toks.every((k) =>
+        (o.t.label + " " + (o.t.full || "")).toLowerCase().indexOf(k) >= 0));
+    } else {
+      pool = pool.slice(0, 6);
+      host.appendChild(el("div", "tg-hint", "留空只显示最常用的 6 个；输入名称可搜到其余标签"));
+    }
+    if (!pool.length) {
+      host.appendChild(el("div", "tg-empty", toks.length
+        ? "没有匹配的标签，换个词，或用「新增全局标签」建一个"
+        : "全局标签都已加在这一期上"));
+      return;
+    }
+    pool.slice(0, 6).forEach((o) => {
+      const item = el("div", "tg-item");
+      item.style.setProperty("--tc", o.t.color || "#8a8f98");
+      item.append(el("span", "sw"), el("span", "tn", o.t.label));
+      // 只有「命中的是播放列表全名、而简写标签名里没有这个词」时才补出全名，避免重复堆字
+      const labelLow = o.t.label.toLowerCase();
+      const fromFull = toks.length && !toks.every((k) => labelLow.indexOf(k) >= 0);
+      if (fromFull && o.t.full && o.t.full !== o.t.label) item.appendChild(el("span", "tf", o.t.full));
+      item.appendChild(el("span", "n", String(o.n)));
+      item.onclick = (ev) => {
+        ev.stopPropagation();
+        setTag(v.id, o.t.id, true);
+        buildEditor(box, S.byId[v.id]);
+        paintRows(); applyFilter();
+      };
+      host.appendChild(item);
+    });
+  }
+
+  // 新增视频标签：搜索已有全局标签并挂到本期
+  function buildTagAddPanel(box, v, ui) {
+    const sub = el("div", "ed-sub");
+    const head = el("div", "sub-head");
+    head.append(el("span", "sub-k", "选标签"),
+      el("span", "sub-hint", "把已有的全局标签加到本期"));
+    const close = el("button", "ghost sm", "收起");
+    close.onclick = (ev) => { ev.stopPropagation(); ui.mode = null; buildEditor(box, v); };
+    head.appendChild(close);
+    sub.appendChild(head);
+
+    const inp = el("input", "refinput sub-input");
+    inp.type = "text";
+    inp.placeholder = "搜索标签名称…";
+    inp.autocomplete = "off";
+    inp.value = ui.q || "";
+    const list = el("div", "sub-list");
+    const paint = () => renderTagCandidates(list, box, v, ui);
+    inp.addEventListener("input", () => { ui.q = inp.value; paint(); });
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault(); e.stopPropagation();
+        ui.mode = null; buildEditor(box, v);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        const first = list.querySelector(".tg-item");
+        if (first) first.click();
+      }
+    });
+    sub.append(inp, list);
+    paint();
+    setTimeout(() => {
+      const n = box.querySelector(".sub-input");
+      if (!n) return;
+      try { n.focus({ preventScroll: true }); } catch (e) { n.focus(); }
+    }, 0);
+    return sub;
+  }
+
+  // 新增全局标签：建一个全站可用的标签，并顺手挂到本期
+  function buildTagNewPanel(box, v, ui) {
+    const sub = el("div", "ed-sub");
+    const head = el("div", "sub-head");
+    head.append(el("span", "sub-k", "新标签"),
+      el("span", "sub-hint", "建好会同时加到本期；改名、换色、删除在「管理全局标签」"));
+    const close = el("button", "ghost sm", "收起");
+    close.onclick = (ev) => { ev.stopPropagation(); ui.mode = null; buildEditor(box, v); };
+    head.appendChild(close);
+    sub.appendChild(head);
+
+    const form = el("div", "ed-new");
+    const color = el("input", "tsw");
+    color.type = "color";
+    color.value = "#4a90d9";
+    const name = el("input", "tname");
+    name.type = "text";
+    name.placeholder = "标签名称";
+    name.maxLength = 24;
+    const ok = el("button", "primary", "创建并加到本期");
+    const submit = () => {
+      const clean = name.value.trim();
+      if (!clean) { name.focus(); return; }
+      if (S.tags.some((t) => t.label === clean)) {
+        toast("已有同名标签，用「新增视频标签」挂到本期即可");
+        name.focus(); return;
+      }
+      const id = createTag(clean, color.value);
+      if (!id) return;
+      setTag(v.id, id, true);
+      ui.mode = null;
+      buildEditor(box, S.byId[v.id]);
+      paintRows(); applyFilter();
+      toast("已新建全局标签「" + clean + "」并加到本期");
+    };
+    ok.onclick = (ev) => { ev.stopPropagation(); submit(); };
+    const keys = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault(); e.stopPropagation();
+        ui.mode = null; buildEditor(box, v);
+      } else if (e.key === "Enter") {
+        e.preventDefault(); submit();
+      }
+    };
+    name.addEventListener("keydown", keys);
+    color.addEventListener("keydown", keys);
+    form.append(color, name, ok);
+    sub.appendChild(form);
+    setTimeout(() => {
+      const n = box.querySelector(".ed-new .tname");
+      if (n) n.focus();
+    }, 0);
+    return sub;
   }
 
   function renderRefChips(b2, v) {
@@ -1599,14 +1740,13 @@
     return out;
   }
 
-  function openTagManager(opts) {
-    const o = opts || {};
+  function openTagManager() {
     if (document.querySelector(".modal")) return;
     const mask = el("div", "modal");
     const box = el("div", "modal-box taggedit");
-    box.appendChild(el("h3", null, "标签管理"));
+    box.appendChild(el("h3", null, "全局标签管理"));
     box.appendChild(el("p", "modal-hint",
-      "改名或换色立即生效，影响所有视频；删除会从全部视频上移除该标签，之后可以恢复。"));
+      "改名或换色立即生效，影响所有视频；删除会从全部视频上移除该标签，之后可以恢复。这里新建的标签不会自动归到某一期，用行内的「新增视频标签」挂上去。"));
 
     const list = el("div", "taglist");
     box.appendChild(list);
@@ -1673,14 +1813,18 @@
     };
 
     addBtn.onclick = () => {
-      const id = createTag(addName.value, addColor.value);
-      if (!id) { addName.focus(); return; }
-      if (o.assignTo) setTag(o.assignTo, id, true);
+      const label = addName.value.trim();
+      if (!label) { addName.focus(); return; }
+      if (S.tags.some((t) => t.label === label)) {
+        toast("已有同名标签"); addName.focus(); return;
+      }
+      const id = createTag(label, addColor.value);
+      if (!id) return;
       addName.value = "";
       addName.focus();
       render();
       refreshEditor();
-      toast("已新增标签「" + S.tagById[id].label + "」" + (o.assignTo ? "并加到该行" : ""));
+      toast("已新增全局标签「" + S.tagById[id].label + "」");
     };
     addName.onkeydown = (e) => { if (e.key === "Enter") addBtn.click(); };
 

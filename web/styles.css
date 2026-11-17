@@ -237,10 +237,6 @@ button.ghost .cnt{
   padding-top:5px;text-transform:uppercase;
 }
 .ed-body{display:flex;flex-wrap:wrap;gap:5px;align-items:center;flex:1}
-.ed-note{
-  font-size:11.5px;color:#78808a;line-height:1.5;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;
-}
 .tag.mini{height:22px;font-size:11px;padding:0 8px}
 .tag.mini.on{font-weight:500}
 .refitem .rdot{
@@ -249,6 +245,58 @@ button.ghost .cnt{
 }
 .refitem.series .rdot{border-color:rgba(155,124,240,.75);box-shadow:inset 0 0 0 1px rgba(155,124,240,.45)}
 .editor button.ghost{border-color:#2c3138;background:#15181c}
+
+/* ---------- 行编辑面板：标签 ---------- */
+.ed-ops{display:inline-flex;flex-wrap:wrap;gap:5px;margin-left:6px}
+.tagchip{
+  display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 4px 0 8px;
+  border-radius:12px;border:1px solid var(--line2);background:#15181c;
+  font-size:11px;color:var(--text2);
+}
+.tagchip .sw{width:6px;height:6px;border-radius:50%;background:var(--tc);opacity:.85;flex:none}
+.tagchip .tn{color:#d6d3ce;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tagchip .x{
+  width:16px;height:16px;line-height:14px;text-align:center;border-radius:50%;
+  color:#7b828c;cursor:pointer;font-size:13px;flex:none;
+}
+.tagchip .x:hover{background:#241618;color:#f0a8a8}
+.ed-sub{
+  margin:2px 0 0 62px;padding:8px;display:flex;flex-direction:column;gap:7px;
+  border:1px solid var(--line2);border-radius:10px;background:#121519;
+}
+.sub-head{display:flex;align-items:center;gap:8px;font-size:11px;color:#8a9099}
+.sub-k{
+  flex:none;font-size:10px;color:#85b7eb;padding:0 5px;border-radius:4px;
+  border:1px solid rgba(91,156,248,.4);background:rgba(91,156,248,.1);
+}
+.sub-hint{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sub-input{width:100%;min-width:0}
+.sub-list{max-height:190px;overflow:auto;display:flex;flex-direction:column;gap:1px}
+.tg-hint,.tg-empty{font-size:11px;color:#6b7280;padding:5px 8px}
+.tg-item{
+  display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:5px;
+  cursor:pointer;font-size:12px;
+}
+.tg-item:hover{background:#1d2228}
+.tg-item .sw{width:7px;height:7px;border-radius:50%;background:var(--tc);flex:none}
+.tg-item .tn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#d6d3ce}
+.tg-item .tf{
+  max-width:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:10px;color:#6b7280;flex:none;
+}
+.tg-item .n{font-family:var(--mono);font-size:10px;color:#6f7680;flex:none}
+.ed-new{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ed-new .tsw{
+  width:28px;height:28px;padding:0;border:1px solid #2a3038;border-radius:6px;
+  background:transparent;cursor:pointer;flex:none;
+}
+.ed-new .tname{
+  flex:1;min-width:130px;height:28px;padding:0 9px;border-radius:6px;
+  border:1px solid #232830;background:#0c0f12;color:#e6e3de;
+  font-family:var(--sans);font-size:12.5px;outline:0;
+}
+.ed-new .tname:focus{border-color:#3a424c}
+
 .refitem{
   display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 4px 0 7px;
   border-radius:12px;border:1px solid var(--line2);background:#15181c;
