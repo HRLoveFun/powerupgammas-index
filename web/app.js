@@ -202,22 +202,31 @@
 
   function updateSaveState() {
     if (!IS_DEV) return;
-    const box = $("#saveState");
+    const pill = $("#saveState");
     const np = document.querySelector(".np-status");
-    const t = S.manual._savedAt || "";
     const auto = autoSyncOn();
-    let txt, cls = "savestate";
-    if (!storageOK) { txt = "本地存储不可用"; cls += " err"; }
-    else if (syncing) { txt = "同步中…"; cls += " warn"; }
-    else if (S.syncError) { txt = "同步失败 · 仅存本地（" + S.syncError + "）"; cls += " err"; }
-    else if (S.pendingSync && auto) { txt = "待同步…"; cls += " warn"; }
-    else if (S.pendingSync && !auto) { txt = "仅存本机 · 未启用同步"; cls += " warn"; }
-    else if (S.publishedAt) { txt = "已同步 " + S.publishedAt; cls += " ok"; }
-    else if (S.remoteDiffers) { txt = "本地修订 · 未同步"; cls += " warn"; }
-    else if (t) { txt = "本地已保存 " + t; cls += " ok"; }
-    else { txt = auto ? "自动同步已开启" : "本地存储已启用"; }
-    if (box) { box.hidden = false; box.className = cls; box.textContent = txt; }
-    if (np) np.textContent = !storageOK ? "未保存" : (t ? "已保存 " + t : "已保存");
+    const raw = S.manual._savedAt || "";
+    const hm = raw ? raw.slice(0, 5) : "";
+    let short, full, cls = "";
+
+    if (!storageOK) { short = "未保存"; full = "浏览器禁止本地存储，改动不会被保留"; cls = "err"; }
+    else if (syncing) { short = "同步中…"; full = "正在写入仓库"; cls = "warn"; }
+    else if (S.syncError) { short = "同步失败"; full = "同步失败 · 仅存本地（" + S.syncError + "）"; cls = "err"; }
+    else if (S.pendingSync && auto) { short = "待同步…"; full = "有改动等待写入仓库"; cls = "warn"; }
+    else if (S.pendingSync && !auto) { short = "仅存本机"; full = "改动只存在这台浏览器 · 点此配置同步"; cls = "warn"; }
+    else if (S.publishedAt) { short = "已同步 " + S.publishedAt.slice(0, 5); full = "已同步 " + S.publishedAt; cls = "ok"; }
+    else if (S.remoteDiffers) { short = "未同步"; full = "本地版本与线上不一致"; cls = "warn"; }
+    else if (hm) { short = "已保存 " + hm; full = "本地已保存 " + raw; cls = "ok"; }
+    else { short = auto ? "自动同步" : "同步未配置"; full = auto ? "自动同步已开启" : "点此配置 Token，把改动写回仓库"; cls = auto ? "ok" : "warn"; }
+
+    if (pill) {
+      pill.hidden = false;
+      pill.className = "savepill " + cls;
+      pill.title = full + "（点击打开同步设置）";
+      const t = pill.querySelector(".sp-t");
+      if (t) t.textContent = short;
+    }
+    if (np) np.textContent = !storageOK ? "未保存" : (raw ? "已保存 " + raw : "已保存");
   }
 
   function warnStorage() {
@@ -1865,6 +1874,15 @@
     b.title = ready ? "同步设置 / 立即同步" : "配置仓库与 Token，把改动写回线上";
   }
 
+  function buildSavePill() {
+    const p = el("button", "savepill");
+    p.id = "saveState";
+    p.type = "button";
+    p.append(el("span", "dot"), el("span", "sp-t", ""));
+    p.onclick = (e) => { e.stopPropagation(); openPublish(); };
+    document.body.appendChild(p);
+  }
+
   function buildDevTools() {
     const box = $("#devTools");
     if (!box) return;
@@ -1885,6 +1903,7 @@
     document.body.classList.toggle("dev", IS_DEV);
     if (IS_DEV) {
       buildDevTools();
+      buildSavePill();
       const chip = $("#modechip");
       if (chip) chip.hidden = false;
     } else {

@@ -696,3 +696,29 @@ button.primary:disabled{opacity:.6;cursor:default}
 
 button.ghost.accent{border-color:#2f5c93;color:#9dc4ff;background:#101a26}
 button.ghost.accent:hover{background:#14212f;border-color:#3a72b8}
+
+/* ---------- 悬浮同步状态 ---------- */
+.savepill{
+  position:fixed;z-index:78;
+  right:16px;bottom:max(16px,env(safe-area-inset-bottom));
+  display:inline-flex;align-items:center;gap:7px;
+  height:30px;padding:0 13px;border-radius:999px;cursor:pointer;
+  background:rgba(16,19,23,.94);border:1px solid #262c34;
+  color:#98a1ac;font-family:var(--sans);font-size:11.5px;letter-spacing:.01em;
+  box-shadow:0 10px 28px rgba(0,0,0,.5);
+  backdrop-filter:blur(8px);transition:.16s;
+}
+.savepill:hover{border-color:#39414b;color:#c8d0da;transform:translateY(-1px)}
+.savepill .dot{
+  width:6px;height:6px;border-radius:50%;background:#5f6670;flex:none;
+}
+.savepill.ok .dot{background:#6fbf73;box-shadow:0 0 0 3px rgba(111,191,115,.12)}
+.savepill.warn .dot{background:#e0b45a;box-shadow:0 0 0 3px rgba(224,180,90,.12)}
+.savepill.err .dot{background:#e08a8a;box-shadow:0 0 0 3px rgba(224,138,138,.14)}
+.savepill.err{border-color:#4a2a2a}
+.savepill.ok{color:#a8c9a8}
+.savepill.warn{color:#d8bf8e}
+.savepill.err{color:#dfa9a9}
+@media (max-width:560px){
+  .savepill{right:12px;bottom:max(12px,env(safe-area-inset-bottom));height:28px;padding:0 11px;font-size:11px}
+}
