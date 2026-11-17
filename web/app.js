@@ -843,7 +843,7 @@
         };
         act.appendChild(ok);
       } else {
-        act.appendChild(el("span", "lg", "没有同系列候选，需在「维护」模式里手动添加引用"));
+        act.appendChild(el("span", "lg", "没有同系列候选，可点该行的「编辑」手动添加"));
       }
 
       const loc = el("button", "ghost sm", "定位");
