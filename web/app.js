@@ -249,11 +249,10 @@
     $("#headmeta").innerHTML =
       "<b>" + S.videos.length + "</b> 期<i>/</i>" + first.slice(0, 4) + "–" + last.slice(0, 4) +
       "<i>/</i><b>" + edges + "</b> 条关联";
-    $("#footstat").textContent =
-      "排序：发布日期从新到旧 · 共 " + S.videos.length + " 个公开视频 · 生成于 " + DATA.generatedAt;
-    $("#footnote").textContent = IS_DEV
-      ? "开发版：点行内空白处写笔记，点「编辑」改标签与引用；改动暂存本地，导出后固化"
-      : "标签来自频道播放列表；引用按简介链接与系列结构推断";
+    $("#footstat").textContent = "";
+    $("#footsep").hidden = true;
+    $("#footnote").textContent =
+      "数据更新于 " + DATA.generatedAt + " · 标签来自频道播放列表，引用按简介链接与系列结构推断";
   }
 
   /* ---------------- tags ---------------- */
@@ -435,9 +434,9 @@
       if (show) { shown++; yearOn[v.date.slice(0, 4)] = true; }
     });
     S.years.forEach((y) => y.el.classList.toggle("hidden", !yearOn[y.year]));
-    $("#footstat").textContent =
-      (S.sel.size || S.search ? "筛选后 " + shown + " / " + S.videos.length + " 期" :
-        "排序：发布日期从新到旧 · 共 " + S.videos.length + " 个公开视频") + " · 生成于 " + DATA.generatedAt;
+    const filtering = !!(S.sel.size || S.search);
+    $("#footstat").textContent = filtering ? "筛选后 " + shown + " / " + S.videos.length + " 期" : "";
+    $("#footsep").hidden = !filtering;
     markActive();
     drawFrames();
     drawLinks();
