@@ -557,12 +557,12 @@ button.ghost .cnt{
 .modal-box h3{margin:0 0 6px;font-size:15px;font-weight:620}
 .modal-hint{margin:0 0 14px;font-size:11.5px;line-height:1.62;color:#7d848e}
 .modal label{display:block;margin-bottom:10px;font-size:11px;color:#8b939d;letter-spacing:.03em}
-.modal label input{
+.modal label:not(.modal-check) input{
   display:block;width:100%;margin-top:5px;height:33px;padding:0 9px;
   border-radius:6px;border:1px solid #232830;background:#0c0f12;color:#e6e3de;
   font-family:var(--mono);font-size:12.5px;outline:0;
 }
-.modal label input:focus{border-color:#3a424c}
+.modal label:not(.modal-check) input:focus{border-color:#3a424c}
 .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
 .modal-actions .ghost{order:1}
 .modal-actions .primary{order:3}
@@ -576,3 +576,11 @@ button.primary{
 button.primary:hover{background:#2b7bf5}
 button.primary:disabled{opacity:.6;cursor:default}
 .savestate.warn{color:#e0b45a}
+
+.modal label.modal-check{
+  display:flex;align-items:center;gap:8px;margin:2px 0 4px;
+  font-size:11.5px;color:#a8b0ba;letter-spacing:0;
+}
+.modal label.modal-check input[type=checkbox]{
+  width:14px;height:14px;margin:0;accent-color:#1f6feb;flex:none;
+}

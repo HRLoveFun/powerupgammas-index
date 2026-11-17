@@ -29,6 +29,7 @@
     years: [],
     dirty: false,
     remoteDiffers: false,   // 本地改动与线上版本不一致
+    dirtyKeys: new Set(),   // 自上次同步以来改动过的视频 id
     publishedAt: "",
   };
 
@@ -151,6 +152,7 @@
     const d = new Date();
     S.manual._savedAt = [d.getHours(), d.getMinutes(), d.getSeconds()]
       .map((n) => String(n).padStart(2, "0")).join(":");
+    S.manual._pending = S.dirty ? 1 : 0;
     try {
       localStorage.setItem(LSKEY, JSON.stringify(S.manual));
       storageOK = true;
@@ -169,13 +171,16 @@
     const box = $("#saveState");
     const np = document.querySelector(".np-status");
     const t = S.manual._savedAt || "";
+    const auto = autoSyncOn();
     let txt, cls = "savestate";
     if (!storageOK) { txt = "本地存储不可用"; cls += " err"; }
-    else if (S.dirty) { txt = "未保存…"; }
-    else if (S.publishedAt) { txt = "已提交 " + S.publishedAt; cls += " ok"; }
-    else if (S.remoteDiffers) { txt = "本地修订 · 未提交（与线上不同）"; cls += " warn"; }
+    else if (syncing) { txt = "同步中…"; cls += " warn"; }
+    else if (S.syncError) { txt = "同步失败 · 仅存本地（" + S.syncError + "）"; cls += " err"; }
+    else if (S.dirty && auto) { txt = "待同步…"; cls += " warn"; }
+    else if (S.publishedAt) { txt = "已同步 " + S.publishedAt; cls += " ok"; }
+    else if (S.remoteDiffers) { txt = "本地修订 · 未同步"; cls += " warn"; }
     else if (t) { txt = "本地已保存 " + t; cls += " ok"; }
-    else { txt = "本地存储已启用"; }
+    else { txt = auto ? "自动同步已开启" : "本地存储已启用"; }
     if (box) { box.hidden = false; box.className = cls; box.textContent = txt; }
     if (np) np.textContent = !storageOK ? "未保存" : (t ? "已保存 " + t : "已保存");
   }
@@ -729,6 +734,7 @@
 
   function setTag(vid, tagId, on) {
     S.dirty = true;
+    S.dirtyKeys.add(vid);
     const m = S.manual.tags;
     const rule = m[vid] || (m[vid] = { add: [], remove: [] });
     rule.add = rule.add || []; rule.remove = rule.remove || [];
@@ -745,6 +751,7 @@
 
   function setRef(vid, toId, on) {
     S.dirty = true;
+    S.dirtyKeys.add(vid);
     const m = S.manual.refs;
     const rule = m[vid] || (m[vid] = { add: [], remove: [] });
     rule.add = rule.add || []; rule.remove = rule.remove || [];
@@ -768,6 +775,7 @@
     renderTags();
     refreshDirty();
     applyFilter();
+    scheduleSync();
   }
 
   function countEdits() {
@@ -808,12 +816,12 @@
     toast("已导出 manual.json —— 放入 data/ 后重新构建即可固化");
   }
 
-  /* ---------------- 提交到 GitHub ---------------- */
+  /* ---------------- 同步到仓库 ---------------- */
   const GHKEY = "pug.gh.v1";
   const NEUTRAL = { name: "PowerUpGammas Index", email: "noreply@github.com" };
 
   function ghConfig() {
-    const c = { repo: "", branch: "main", token: "" };
+    const c = { repo: "", branch: "main", token: "", auto: true };
     try { Object.assign(c, JSON.parse(localStorage.getItem(GHKEY) || "{}")); } catch (e) {}
     if (!c.repo) {
       const m = location.hostname.match(/^([^.]+)\.github\.io$/);
@@ -827,9 +835,12 @@
     try { localStorage.setItem(GHKEY, JSON.stringify(c)); } catch (e) {}
   }
 
+  const syncReady = () => { const c = ghConfig(); return !!(c.repo && c.token); };
+
   function manualForFile() {
     const o = JSON.parse(JSON.stringify(S.manual));
     delete o._savedAt;
+    delete o._pending;
     return o;
   }
 
@@ -840,61 +851,177 @@
     return btoa(bin);
   }
 
+  function fromB64(b64) {
+    const bin = atob(String(b64 || "").replace(/\s/g, ""));
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  }
+
   function stamp() {
     const d = new Date();
     return [d.getHours(), d.getMinutes(), d.getSeconds()]
       .map((n) => String(n).padStart(2, "0")).join(":");
   }
 
-  async function ghCommit(cfg) {
+  // 只把「本机改动过的条目」盖到远端版本上，避免多设备互相覆盖
+  function mergeManual(remote, local, keys) {
+    const out = JSON.parse(JSON.stringify(remote || {}));
+    ["tags", "refs", "notes"].forEach((k) => {
+      out[k] = out[k] || {};
+      keys.forEach((id) => {
+        if (local[k] && local[k][id] !== undefined) out[k][id] = local[k][id];
+        else delete out[k][id];
+      });
+    });
+    const defs = new Map();
+    (out.tagDefs || []).forEach((d) => defs.set(d.id, d));
+    (local.tagDefs || []).forEach((d) => defs.set(d.id, d));
+    out.tagDefs = Array.from(defs.values());
+    out.pendingDismissed = Array.from(new Set([].concat(out.pendingDismissed || [], local.pendingDismissed || [])));
+    if (local._comment) out._comment = local._comment;
+    if (local._schema) out._schema = local._schema;
+    return out;
+  }
+
+  function ghApi(cfg) {
     const parts = String(cfg.repo || "").split("/");
     const owner = parts[0], repo = parts[1];
     if (!owner || !repo) throw new Error("仓库格式应为 owner/repo");
     if (!cfg.token) throw new Error("请填写 Access Token");
-
     const branch = cfg.branch || "main";
-    const url = "https://api.github.com/repos/" + owner + "/" + repo + "/contents/data/manual.json";
-    const headers = {
-      Authorization: "Bearer " + cfg.token,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
+    return {
+      url: "https://api.github.com/repos/" + owner + "/" + repo + "/contents/data/manual.json",
+      branch: branch,
+      headers: {
+        Authorization: "Bearer " + cfg.token,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
     };
+  }
 
-    let sha = null;
-    const g = await fetch(url + "?ref=" + encodeURIComponent(branch), { headers, cache: "no-store" });
-    if (g.ok) {
-      sha = (await g.json()).sha;
-    } else if (g.status === 401) {
-      throw new Error("Token 无效或已过期");
-    } else if (g.status === 404) {
-      throw new Error("找不到 " + owner + "/" + repo + " 的分支 " + branch + "，请检查仓库名与分支");
-    } else {
-      throw new Error("读取线上文件失败（HTTP " + g.status + "）");
-    }
+  async function ghRead(api) {
+    const r = await fetch(api.url + "?ref=" + encodeURIComponent(api.branch), { headers: api.headers, cache: "no-store" });
+    if (r.status === 404) return { sha: null, data: null };
+    if (r.status === 401) throw new Error("Token 无效或已过期");
+    if (!r.ok) throw new Error("读取仓库失败（HTTP " + r.status + "）");
+    const j = await r.json();
+    let data = null;
+    try { data = JSON.parse(fromB64(j.content)); } catch (e) {}
+    return { sha: j.sha, data: data };
+  }
 
+  async function ghWrite(api, api2, data, sha) {
     const body = {
       message: "更新索引：" + stamp(),
-      content: toB64(JSON.stringify(manualForFile(), null, 2) + "\n"),
-      branch: branch,
+      content: toB64(JSON.stringify(data, null, 2) + "\n"),
+      branch: api.branch,
       author: NEUTRAL,
       committer: NEUTRAL,
     };
     if (sha) body.sha = sha;
-
-    const p = await fetch(url, {
+    const p = await fetch(api.url, {
       method: "PUT",
-      headers: Object.assign({ "Content-Type": "application/json" }, headers),
+      headers: Object.assign({ "Content-Type": "application/json" }, api.headers),
       body: JSON.stringify(body),
     });
-    if (!p.ok) {
-      let detail = "";
-      try { detail = (await p.json()).message || ""; } catch (e) {}
-      if (p.status === 401) throw new Error("Token 无效或已过期");
-      if (p.status === 409) throw new Error("线上文件刚被改过，请刷新页面后重新提交");
-      if (p.status === 403) throw new Error("权限不足：Token 需要该仓库的 Contents 读写权限");
-      throw new Error((detail || "提交失败") + "（HTTP " + p.status + "）");
+    if (p.ok) return true;
+    if (p.status === 409) return false;              // 已被别人改过，交给调用方重试
+    if (p.status === 401) throw new Error("Token 无效或已过期");
+    if (p.status === 403) throw new Error("权限不足：Token 需要该仓库的 Contents 读写权限");
+    let detail = "";
+    try { detail = (await p.json()).message || ""; } catch (e) {}
+    throw new Error((detail || "写入失败") + "（HTTP " + p.status + "）");
+  }
+
+  function diffKeys(remote, local) {
+    const keys = new Set();
+    ["tags", "refs", "notes"].forEach((k) => {
+      const r = (remote && remote[k]) || {};
+      const l = local[k] || {};
+      new Set(Object.keys(r).concat(Object.keys(l))).forEach((id) => {
+        if (JSON.stringify(r[id]) !== JSON.stringify(l[id])) keys.add(id);
+      });
+    });
+    return Array.from(keys);
+  }
+
+  // 一次完整同步：读远端 -> 合并本机改动 -> 写回；冲突时重读重试一次
+  async function ghSync(cfg) {
+    const api = ghApi(cfg);
+    const local = manualForFile();
+    let lastErr = null;
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const remote = await ghRead(api);
+      let data = local;
+
+      if (remote.data) {
+        const keys = S.dirtyKeys.size ? Array.from(S.dirtyKeys) : diffKeys(remote.data, local);
+        data = mergeManual(remote.data, local, keys);
+        // 内容没变化就不产生空提交
+        if (JSON.stringify(data) === JSON.stringify(remote.data)) {
+          return { skipped: true };
+        }
+      }
+      const ok = await ghWrite(api, api, data, remote.sha);
+      if (ok) return { ok: true, data: data };
+      lastErr = new Error("冲突");
     }
-    return p.json();
+    throw lastErr || new Error("同步失败");
+  }
+
+  /* ---- 自动同步 ---- */
+  let syncTimer = null, syncing = false, syncQueued = false;
+  S.syncError = "";
+
+  function autoSyncOn() {
+    const c = ghConfig();
+    return !!(c.auto && c.token && c.repo);
+  }
+
+  function scheduleSync() {
+    if (!autoSyncOn()) { updateSaveState(); return; }
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => runSync(true), 2200);
+  }
+
+  async function runSync(auto) {
+    if (!syncReady()) { S.syncError = "未配置 Token"; updateSaveState(); return; }
+    if (syncing) { syncQueued = true; return; }
+    syncing = true;
+    S.syncError = "";
+    updateSaveState();
+    try {
+      const r = await ghSync(ghConfig());
+      if (r.data) absorbManual(r.data);
+      S.publishedAt = stamp();
+      S.dirty = false;
+      S.remoteDiffers = false;
+      S.dirtyKeys.clear();
+      S.manual._savedAt = S.publishedAt;
+      S.manual._pending = 0;
+      persistQuiet();
+    } catch (e) {
+      S.syncError = e.message || "同步失败";
+    } finally {
+      syncing = false;
+      updateSaveState();
+      if (syncQueued) { syncQueued = false; scheduleSync(); }
+      else if (!auto && !S.syncError) toast("已同步到仓库");
+    }
+  }
+
+  function absorbManual(data) {
+    S.manual = Object.assign(emptyManual(), data);
+    recompute();
+    paintRows();
+    renderTags();
+    refreshDirty();
+  }
+
+  function persistQuiet() {
+    try { localStorage.setItem(LSKEY, JSON.stringify(S.manual)); } catch (e) {}
   }
 
   function openPublish() {
@@ -902,9 +1029,9 @@
     const cfg = ghConfig();
     const mask = el("div", "modal");
     const box = el("div", "modal-box");
-    box.appendChild(el("h3", null, "提交到 GitHub"));
+    box.appendChild(el("h3", null, "同步到仓库"));
     box.appendChild(el("p", "modal-hint",
-      "把当前的笔记 / 标签 / 引用写回仓库的 data/manual.json。其他设备刷新后即可看到，约 30 秒。"));
+      "开发版的改动会写回仓库的 data/manual.json，其他设备刷新即可看到（约 30 秒）。Token 只存这台浏览器。"));
 
     const mk = (label, key, type, ph) => {
       const l = el("label", null, label);
@@ -918,26 +1045,45 @@
       box.appendChild(l);
       return i;
     };
-    const repoIn = mk("仓库（owner/repo）", "repo", "text", "HRLoveFun/powerupgammas-index");
+    const repoIn = mk("仓库（owner/repo）", "repo", "text", "owner/repo");
     const branchIn = mk("分支", "branch", "text", "main");
     const tokenIn = mk("Access Token（只存本浏览器，不写进仓库）", "token", "password", "github_pat_…");
     tokenIn.spellcheck = false;
 
+    const autoWrap = el("label", "modal-check");
+    const autoIn = el("input");
+    autoIn.type = "checkbox";
+    autoIn.checked = cfg.auto !== false;
+    autoWrap.appendChild(autoIn);
+    autoWrap.appendChild(document.createTextNode(" 自动同步（停止输入 2 秒后自动提交）"));
+    box.appendChild(autoWrap);
+
     const msg = el("div", "modal-msg");
     const acts = el("div", "modal-actions");
 
-    const cancel = el("button", "ghost", "取消");
+    const save = () => {
+      const c = {
+        repo: repoIn.value.trim(),
+        branch: branchIn.value.trim() || "main",
+        token: tokenIn.value.trim(),
+        auto: autoIn.checked,
+      };
+      saveGhConfig(c);
+      return c;
+    };
+
+    const cancel = el("button", "ghost", "关闭");
     cancel.onclick = () => mask.remove();
+
     const pull = el("button", "ghost", "用线上版本覆盖本地");
-    pull.title = "丢弃本地未提交的改动，重新拉取仓库里的版本";
     pull.onclick = async () => {
-      if (!confirm("将丢弃本地未提交的改动，改用仓库里的版本？")) return;
+      if (!confirm("丢弃本地未同步的改动，改用仓库里的版本？")) return;
       try {
         const r = await fetch("data/manual.json?t=" + Date.now(), { cache: "no-store" });
         if (!r.ok) throw new Error("拉取失败");
         adoptManual(await r.json());
         try { localStorage.removeItem(LSKEY); } catch (e) {}
-        S.remoteDiffers = false; S.dirty = false; S.publishedAt = "";
+        S.remoteDiffers = false; S.dirty = false; S.publishedAt = ""; S.syncError = ""; S.dirtyKeys.clear();
         updateSaveState();
         msg.className = "modal-msg ok";
         msg.textContent = "已切换到线上版本。";
@@ -946,29 +1092,26 @@
         msg.textContent = e.message;
       }
     };
-    const ok = el("button", "primary", "提交");
+
+    const ok = el("button", "primary", "立即同步");
     ok.onclick = async () => {
-      const c = { repo: repoIn.value.trim(), branch: branchIn.value.trim() || "main", token: tokenIn.value.trim() };
-      saveGhConfig(c);
-      ok.disabled = true; ok.textContent = "提交中…";
+      save();
+      ok.disabled = true; ok.textContent = "同步中…";
       msg.className = "modal-msg"; msg.textContent = "";
       try {
-        await ghCommit(c);
-        S.publishedAt = stamp();
-        S.dirty = false;
-        S.remoteDiffers = false;
-        S.manual._savedAt = S.publishedAt;
-        updateSaveState();
+        await runSync(false);
+        if (S.syncError) throw new Error(S.syncError);
         msg.className = "modal-msg ok";
-        msg.textContent = "已提交。其他设备刷新后即可看到（约 30 秒）。";
-        ok.textContent = "已提交";
-        setTimeout(() => mask.remove(), 1600);
+        msg.textContent = "已同步。其他设备刷新后即可看到（约 30 秒）。";
+        ok.textContent = "已同步";
+        setTimeout(() => mask.remove(), 1400);
       } catch (e) {
         msg.className = "modal-msg";
         msg.textContent = e.message;
-        ok.disabled = false; ok.textContent = "提交";
+        ok.disabled = false; ok.textContent = "立即同步";
       }
     };
+
     acts.append(pull, cancel, ok);
     box.appendChild(msg);
     box.appendChild(acts);
@@ -1040,12 +1183,14 @@
   let noteT = null;
   function setNote(vid, md) {
     S.dirty = true;
+    S.dirtyKeys.add(vid);
     const notes = S.manual.notes || (S.manual.notes = {});
     const val = String(md || "").trim();
     if (val) notes[vid] = md; else delete notes[vid];
     S.byId[vid].note = val;
     persist();
     refreshDirty();
+    scheduleSync();
     clearTimeout(noteT);
     noteT = setTimeout(() => svgResize(), 260);
   }
@@ -1148,6 +1293,7 @@
     S.pending = S.pending.filter((p) => p.videoId !== vid);
     persist();
     renderPending(); refreshDirty();
+    scheduleSync();
   }
 
   /* ---------------- misc ---------------- */
@@ -1164,9 +1310,9 @@
     if (!box) return;
     const pend = el("button", "ghost");
     pend.id = "btnPending"; pend.hidden = true;
-    const pub = el("button", "ghost", "提交");
+    const pub = el("button", "ghost", "同步");
     pub.id = "btnPublish";
-    pub.title = "把本地改动写回仓库（首次需填一次 Token）";
+    pub.title = "同步设置 / 立即同步";
     const exp = el("button", "ghost");
     exp.id = "btnExport"; exp.hidden = true;
     const rst = el("button", "ghost", "重置");
@@ -1244,7 +1390,14 @@
     }
 
     // 起页面后再去拉一次线上版本（file:// 下自动跳过）
-    hydrateManual();
+    hydrateManual().then(() => {
+      if (IS_DEV && S.manual._pending && autoSyncOn()) scheduleSync();
+    });
+
+    // 切回标签页时再看一眼有没有新版本（公开版也生效）
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") hydrateManual();
+    });
   }
 
   init();
