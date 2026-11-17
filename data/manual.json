@@ -71,6 +71,12 @@
       "id": "tg-jjjdw0l",
       "label": "年度总结",
       "color": "#4a90d9"
+    },
+    {
+      "id": "PLFzeuKbRQ3c0SPg4JsJzgnASUAi8vRlhu",
+      "hidden": true,
+      "label": "通知",
+      "color": "#d97b93"
     }
   ],
   "pendingDismissed": []
