@@ -148,7 +148,9 @@ button.ghost .cnt{
 .c-title{min-width:0;padding-right:12px}
 .c-title a{
   color:#dcd9d4;text-decoration:none;font-size:13px;line-height:1.32;
-  display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  /* 按文字宽度收缩：标题右侧的空白留给「点空白开笔记」，而不是被链接吃掉 */
+  display:inline-block;max-width:100%;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:top;
   transition:color .14s;
 }
 .row:hover .c-title a{color:#fff}
@@ -181,6 +183,8 @@ button.ghost .cnt{
   color:#dcc06a;font-size:10px;font-family:var(--sans);
 }
 .dev .penbtn{display:inline-flex;align-items:center}
+.dev .row:not(.hidden){cursor:pointer}
+.dev .row .c-title a{cursor:pointer}
 .dev .c-refs{flex-wrap:nowrap;gap:6px}
 
 /* row states */
@@ -481,6 +485,7 @@ button.ghost .cnt{
     font-size:12.5px;line-height:1.38;white-space:normal;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
     overflow:hidden;text-overflow:clip;
+    width:fit-content;max-width:100%;   /* 短标题不占满整格，右侧留白可点开笔记 */
   }
   .c-note.has{font-size:11.5px;max-height:calc(1.6em*3)}
   .yr{padding:13px 0 4px 10px;margin-right:0;font-size:9px}
