@@ -1705,9 +1705,9 @@
     bar.appendChild(el("span", "np-label", "笔记"));
 
     const seg = el("span", "np-seg");
-    const bW = el("button", "seg on", "所见即所得");
+    const bW = el("button", "seg on", "富文本");
     const bS = el("button", "seg", "源码");
-    bW.title = "输入时即时渲染，Enter 新建块，Tab 缩进";
+    bW.title = "边写边渲染：行首 # - > 即刻变标题/列表，Tab 缩进，⌘B 加粗";
     bS.title = "直接编辑 Markdown 原文";
     seg.append(bW, bS);
     bar.appendChild(seg);
@@ -1723,17 +1723,17 @@
 
     let cur = v.note || "";
     let ed = null;
-    const getMode = () => (localStorage.getItem("pug.noteMode") === "src" ? "src" : "wys");
+    const getMode = () => (localStorage.getItem("pug.noteMode") === "src" ? "src" : "rich");
     const putMode = (m) => { try { localStorage.setItem("pug.noteMode", m); } catch (e) {} };
 
     function mount() {
       if (ed && typeof ed.getValue === "function") cur = ed.getValue();
       body.textContent = "";
       const m = getMode();
-      bW.classList.toggle("on", m === "wys");
+      bW.classList.toggle("on", m === "rich");
       bS.classList.toggle("on", m === "src");
-      if (m === "wys") {
-        ed = NoteEditor.create(body, {
+      if (m === "rich") {
+        ed = NoteEditor.createRich(body, {
           value: cur,
           onInput: (md) => { cur = md; setNote(v.id, md); },
         });
@@ -1748,7 +1748,7 @@
       setTimeout(() => ed.focus(), 30);
     }
 
-    bW.onclick = (e) => { e.stopPropagation(); if (getMode() !== "wys") { putMode("wys"); mount(); } };
+    bW.onclick = (e) => { e.stopPropagation(); if (getMode() !== "rich") { putMode("rich"); mount(); } };
     bS.onclick = (e) => { e.stopPropagation(); if (getMode() !== "src") { putMode("src"); mount(); } };
 
     p.addEventListener("click", (ev) => ev.stopPropagation());

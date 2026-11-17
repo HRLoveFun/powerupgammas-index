@@ -774,3 +774,30 @@ button.ghost.accent:hover{background:#14212f;border-color:#3a72b8}
 /* 源码模式单栏 */
 .ns.ns-solo{grid-template-columns:1fr}
 .ns.ns-solo .ns-src{min-height:120px}
+
+/* ---------- 富文本编辑区 ---------- */
+.rich{
+  outline:0;min-height:120px;padding:2px 0;
+  font-size:13px;line-height:1.72;color:#d6d3ce;
+}
+.rich:focus{outline:0}
+.rich p{margin:0 0 6px}
+.rich p:last-child{margin-bottom:0}
+.rich h1{font-size:19px;font-weight:650;color:#f0ede8;margin:8px 0 5px}
+.rich h2{font-size:16px;font-weight:640;color:#ece9e4;margin:7px 0 5px}
+.rich h3{font-size:14px;font-weight:620;color:#e4e0da;margin:6px 0 4px}
+.rich ul,.rich ol{margin:5px 0;padding-left:22px}
+.rich li{margin:2px 0}
+.rich ul li{list-style:disc}
+.rich ol li{list-style:decimal}
+.rich blockquote{border-left:2px solid #2f353d;margin:5px 0;padding-left:11px;color:#a9b1bb}
+.rich pre{
+  background:#12151a;border:1px solid #1d2127;border-radius:6px;
+  padding:8px 10px;margin:6px 0;white-space:pre-wrap;
+  font-family:var(--mono);font-size:12px;
+}
+.rich code{font-family:var(--mono);font-size:11.5px;background:#1a1e24;border-radius:3px;padding:0 3px}
+.rich a{color:#78aef8;text-decoration:underline}
+.rich hr{border:0;border-top:1px solid #2a3038;margin:9px 0}
+.rich strong{color:#f2efe9;font-weight:650}
+.rich:empty::before{content:"写点什么……行首 # 变标题，- 变列表";color:#4a5158}

@@ -409,10 +409,204 @@
     };
   }
 
+
+  /* ---------------- 富文本编辑（单一编辑区 + 行首快捷） ---------------- */
+
+  function mdToRichHtml(md) {
+    const blocks = parseMd(md);
+    let out = "", list = null, listType = "";
+    const closeList = () => { if (list) { out += "</" + listType + ">"; list = null; listType = ""; } };
+    blocks.forEach((b) => {
+      const ind = (b.indent || 0) * 40;
+      const st = ind ? ' style="margin-left:' + ind + 'px"' : "";
+      const inner = inlineToHtml(b.text || "");
+      if (b.t === "hr") { closeList(); out += "<hr>"; return; }
+      if (b.t === "code") { closeList(); out += '<pre' + st + '><code>' + escapeHtml(b.text) + "</code></pre>"; return; }
+      if (b.t === "ul" || b.t === "ol") {
+        const tag = b.t === "ul" ? "ul" : "ol";
+        if (listType !== tag) { closeList(); out += "<" + tag + ">"; list = true; listType = tag; }
+        out += "<li>" + inner + "</li>";
+        return;
+      }
+      closeList();
+      if (b.t === "h1") out += "<h1>" + inner + "</h1>";
+      else if (b.t === "h2") out += "<h2>" + inner + "</h2>";
+      else if (b.t === "h3") out += "<h3>" + inner + "</h3>";
+      else if (b.t === "quote") out += "<blockquote" + st + ">" + inner + "</blockquote>";
+      else if (b.text) out += "<p>" + inner + "</p>";
+    });
+    closeList();
+    return out || "<p><br></p>";
+  }
+
+  const BLOCK_TAGS = /^(P|DIV|H1|H2|H3|LI|BLOCKQUOTE|PRE|UL|OL|SECTION|ARTICLE)$/;
+
+  function htmlToRichMd(root) {
+    const lines = [];
+    const inline = (node) => {
+      let out = "";
+      node.childNodes.forEach((n) => {
+        if (n.nodeType === 3) { out += n.nodeValue; return; }
+        if (n.nodeType !== 1) return;
+        const tag = n.nodeName.toLowerCase();
+        if (tag === "strong" || tag === "b") out += "**" + inline(n) + "**";
+        else if (tag === "em" || tag === "i") out += "*" + inline(n) + "*";
+        else if (tag === "code") out += "`" + n.textContent + "`";
+        else if (tag === "a") out += "[" + n.textContent + "](" + (n.getAttribute("href") || "") + ")";
+        else if (tag === "br") out += "\n";
+        else out += inline(n);
+      });
+      return out;
+    };
+    const indentOf = (el) => {
+      const m = (el.style && el.style.marginLeft) || "";
+      const px = parseInt(m, 10) || 0;
+      return px >= 100 ? 3 : px >= 60 ? 2 : px >= 20 ? 1 : 0;
+    };
+    const walk = (node, prefix) => {
+      node.childNodes.forEach((n) => {
+        if (n.nodeType === 3) {
+          const t = n.nodeValue.replace(/\u00a0/g, " ").trim();
+          if (t) lines.push(prefix + t);
+          return;
+        }
+        if (n.nodeType !== 1) return;
+        const tag = n.nodeName;
+        if (tag === "LI") { lines.push(prefix + "- " + inline(n).trim()); return; }
+        if (tag === "UL" || tag === "OL") {
+          Array.from(n.children).forEach((li) => {
+            if (li.tagName !== "LI") return;
+            const pad = "  ".repeat(indentOf(li));
+            const marker = tag === "OL" ? "1. " : "- ";
+            const inner = Array.from(li.childNodes).filter((c) => c.nodeName !== "UL" && c.nodeName !== "OL");
+            const sub = document.createElement("div");
+            inner.forEach((c) => sub.appendChild(c.cloneNode(true)));
+            const text = inline(sub).trim();
+            lines.push(pad + marker + text);
+            const nested = Array.from(li.children).filter((c) => c.tagName === "UL" || c.tagName === "OL");
+            nested.forEach((nl) => walk(nl, pad + "  "));
+          });
+          return;
+        }
+        if (tag === "H1") { lines.push("# " + inline(n)); return; }
+        if (tag === "H2") { lines.push("## " + inline(n)); return; }
+        if (tag === "H3") { lines.push("### " + inline(n)); return; }
+        if (tag === "BLOCKQUOTE") { lines.push("> " + inline(n)); return; }
+        if (tag === "PRE") { lines.push("```\n" + n.textContent + "\n```"); return; }
+        if (tag === "HR") { lines.push("---"); return; }
+        if (BLOCK_TAGS.test(tag)) {
+          // 里面还有块级子元素（如 <div><ul>…）时继续下钻，别把整块当一段文本
+          const hasBlock = Array.from(n.children).some((c) => BLOCK_TAGS.test(c.nodeName));
+          if (hasBlock) { walk(n, prefix); return; }
+          const text = inline(n).trim();
+          if (text) lines.push(prefix + text);
+          return;
+        }
+        const t = inline(n).trim();
+        if (t) lines.push(prefix + t);
+      });
+    };
+    walk(root, "");
+    return lines.join("\n");
+  }
+
+  const SHORTCUTS = [
+    [/^(#{1,3})\s+([\s\S]*)$/, (m) => ({ block: "h" + m[1].length, rest: m[2] })],
+    [/^[-*]\s+([\s\S]*)$/, (m) => ({ list: "ul", rest: m[1] })],
+    [/^(\d+)\.\s+([\s\S]*)$/, (m) => ({ list: "ol", rest: m[2] })],
+    [/^>\s+([\s\S]*)$/, (m) => ({ block: "blockquote", rest: m[1] })],
+    [/^```$/, () => ({ block: "pre", rest: "" })],
+  ];
+
+  function createRich(host, opts) {
+    opts = opts || {};
+    host.classList.add("rich");
+    host.setAttribute("contenteditable", "true");
+    host.setAttribute("spellcheck", "false");
+    host.innerHTML = mdToRichHtml(opts.value || "");
+    if (!host.innerHTML.trim()) host.innerHTML = "<p><br></p>";
+
+    const emit = () => { if (opts.onInput) opts.onInput(htmlToRichMd(host)); };
+
+    const currentBlock = () => {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return null;
+      let n = sel.anchorNode;
+      if (n && n.nodeType === 3) n = n.parentNode;
+      while (n && n !== host && !BLOCK_TAGS.test(n.nodeName)) n = n.parentNode;
+      return n === host ? null : n;
+    };
+
+    const applyShortcut = (block, act) => {
+      if (!block || !block.isConnected) return;
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(block);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.execCommand("delete");
+      if (act.list) {
+        document.execCommand(act.list === "ul" ? "insertUnorderedList" : "insertOrderedList");
+      } else {
+        document.execCommand("formatBlock", false, act.block);
+      }
+      if (act.rest) document.execCommand("insertText", false, act.rest);
+      emit();
+    };
+
+    const onInput = () => {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) { emit(); return; }
+      const block = currentBlock();
+      if (block) {
+        const text = block.textContent || "";
+        const r = sel.getRangeAt(0);
+        const atEnd = r.endOffset === (r.endContainer.nodeType === 3 ? r.endContainer.nodeValue.length : r.endContainer.childNodes.length);
+        if (atEnd) {
+          for (const [re, fn] of SHORTCUTS) {
+            const m = re.exec(text);
+            if (!m) continue;
+            const act = fn(m);
+            // 放到事件循环之后执行：input 事件里直接改 DOM 会被浏览器忽略
+            setTimeout(() => applyShortcut(block, act), 0);
+            break;
+          }
+        }
+      }
+      emit();
+    };
+
+    const onKey = (e) => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        document.execCommand(e.shiftKey ? "outdent" : "indent");
+        emit();
+      }
+    };
+
+    host.addEventListener("input", onInput);
+    host.addEventListener("keydown", onKey);
+    host.addEventListener("blur", emit);
+
+    return {
+      getValue: () => htmlToRichMd(host),
+      focus: () => setTimeout(() => {
+        host.focus();
+        const r = document.createRange();
+        r.selectNodeContents(host);
+        r.collapse(false);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }, 40),
+    };
+  }
+
   global.NoteEditor = {
     render, parseMd, blocksToMd, inlineToHtml, Editor,
     create(host, opts) { return new Editor(host, opts); },
     createSource,
+    createRich,
     isEmpty(md) { return !String(md || "").trim(); },
   };
 })(window);
