@@ -225,7 +225,7 @@
     if (pill) {
       pill.hidden = false;
       pill.className = "savepill " + cls;
-      pill.title = full + "（点击打开同步设置）";
+      pill.setAttribute("aria-label", full + "（点击打开同步设置）");
       const t = pill.querySelector(".sp-t");
       if (t) t.textContent = short;
     }
@@ -283,7 +283,6 @@
         if (!n) return;
         const b = el("button", "tag" + (S.sel.has(t.id) ? " on" : ""));
         b.style.setProperty("--tc", t.color);
-        b.title = (t.full || t.label) + "（" + n + " 期）";
         b.setAttribute("aria-pressed", S.sel.has(t.id) ? "true" : "false");
         const sw = el("span", "sw");
         const lb = el("span", null, t.label);
@@ -335,7 +334,6 @@
       const a = el("a", null, v.title);
       a.href = "https://www.youtube.com/watch?v=" + v.id;
       a.target = "_blank"; a.rel = "noopener";
-      a.title = v.title + "（点击打开原视频）";
       ct.appendChild(a);
       ct.appendChild(el("div", "c-note"));
       row.appendChild(ct);
@@ -373,7 +371,6 @@
         stripe.style.background = "linear-gradient(to bottom," +
           cols.map((c, i) => c + " " + (i * step).toFixed(1) + "%," + c + " " + ((i + 1) * step).toFixed(1) + "%").join(",") + ")";
       }
-      row.title = v.tags.map((t) => (S.tagById[t] ? S.tagById[t].label : t)).join(" · ");
 
       const cr = row.querySelector(".c-refs");
       cr.textContent = "";
@@ -381,22 +378,12 @@
       if (mentions.length) {
         const b = el("button", "badge mention");
         b.dataset.from = v.id;
-        if (mentions.length === 1) {
-          const t = S.byId[mentions[0].to], r = mentions[0];
-          const why = r.label ? "简介链接：" + r.label : "明确引用：";
-          b.title = why + "\n→ " + t.title + "（" + t.date + "）\n点击高亮并连线";
-        } else {
-          const lines = mentions.slice(0, 4).map((r) => "· " + S.byId[r.to].title).join("\n");
-          const more = mentions.length > 4 ? "\n… 共 " + mentions.length + " 个" : "";
-          b.title = "明确引用 " + mentions.length + " 个视频\n" + lines + more + "\n点击一并高亮并连线";
-        }
-        b.setAttribute("aria-label", "查看该行引用");
+        b.setAttribute("aria-label", "查看该行引用（" + mentions.length + " 个）");
         b.onclick = (ev) => { ev.stopPropagation(); toggleSource(v.id); };
         cr.appendChild(b);
       }
       if (IS_DEV) {
         const pen = el("button", "penbtn", "编辑");
-        pen.title = "改标签与引用";
         pen.onclick = (ev) => { ev.stopPropagation(); toggleEditor(v.id); };
         cr.appendChild(pen);
       }
@@ -408,7 +395,6 @@
         cn.classList.toggle("has", !!show);
         cn.innerHTML = show ? NoteEditor.render(v.note) : "";
         if (show && IS_DEV) {
-          cn.title = "点击编辑笔记";
           cn.onclick = (e) => {
             e.stopPropagation();
             // 正在笔记里划词（想复制）时不抢这次点击
@@ -685,12 +671,6 @@
     const rule = (S.manual.refs || {})[vid];
     return !!(rule && (rule.add || []).some((x) => x.to === to));
   }
-  function refKind(v, r) {
-    const ser = isSeriesRef(v, r);
-    const base = ser ? (r.type === "series" ? "系列关联" : "系列内引用")
-      : r.label ? "简介链接：" + r.label : "明确引用";
-    return base + " · " + (isManualRef(v.id, r.to) ? "手动添加" : "自动生成");
-  }
   const overlapTags = (a, b) => {
     const bt = b.tags || [];
     return (a.tags || []).filter((t) => t !== "unfiled" && bt.indexOf(t) >= 0).length;
@@ -724,7 +704,6 @@
     b1.appendChild(mk);
 
     const mng = el("button", "ghost sm", "管理");
-    mng.title = "改名 · 换色 · 删除";
     mng.onclick = (ev) => { ev.stopPropagation(); openTagManager(); };
     b1.appendChild(mng);
 
@@ -785,14 +764,13 @@
       chip.appendChild(el("span", "rt", shortTitle(t.title, 14)));
       if (isManualRef(v.id, r.to)) {
         const mk = el("span", "mk", "手");
-        mk.title = "手动添加";
+        mk.setAttribute("aria-label", "手动添加");
         chip.appendChild(mk);
       }
-      chip.title = t.title + "\n" + refKind(v, r) + (r.type === "series" ? "\n系列关系由标题结构决定，不能单独删除" : "") + "\n点击跳到该行";
       chip.onclick = (ev) => { ev.stopPropagation(); jumpToRef(r.to); };
       if (r.type !== "series") {
         const x = el("span", "x", "×");
-        x.title = "删除这条引用";
+        x.setAttribute("aria-label", "删除这条引用");
         x.onclick = (ev) => {
           ev.stopPropagation();
           setRef(v.id, r.to, false);
@@ -803,7 +781,6 @@
     });
     const picking = !!(S.pick && S.pick.from === v.id);
     const add = el("button", "tag mini add", picking ? "选目标中…" : "＋ 添加引用");
-    add.title = picking ? "先在下方选完目标，或按 Esc 结束" : "进入选目标模式：点列表任意一行，或搜索";
     if (picking) {
       add.disabled = true;
       add.style.opacity = ".55";
@@ -849,7 +826,6 @@
     head.appendChild(el("span", "pk-sub",
       "为《" + shortTitle(v.title, 20) + "》添加引用 · 点列表任意一行，或直接搜索"));
     const end = el("button", "ghost sm", "结束");
-    end.title = "退出选目标（Esc）";
     end.onclick = (ev) => { ev.stopPropagation(); exitPick(); };
     head.appendChild(end);
     wrap.appendChild(head);
@@ -976,7 +952,6 @@
     else if (rev) { st.textContent = "反向已存在"; st.classList.add("rev"); }
     else if (ser) { st.textContent = "同系列"; st.classList.add("ser"); }
     if (st.textContent) item.appendChild(st);
-    item.title = x.title + (on ? "\n已引用" : rev ? "\n对方也引用了本期" : "") + (ser ? "\n同系列" : "");
     item.onclick = (ev) => {
       ev.stopPropagation();
       choosePick(x);
@@ -1189,7 +1164,6 @@
     ex.hidden = !n;
     rs.hidden = !S.pendingSync;   // 只有还没同步到仓库的本地改动才有「重置」可言
     ex.textContent = "导出修订 (" + n + ")";
-    ex.title = "笔记 " + c.notes + " · 标签 " + c.tags + " · 引用 " + c.refs;
   }
 
   function exportManual() {
@@ -1753,15 +1727,10 @@
     const seg = el("span", "np-seg");
     const bW = el("button", "seg on", "富文本");
     const bS = el("button", "seg", "源码");
-    bW.title = "边写边渲染：行首 # - > 即刻变标题/列表，Tab 缩进，⌘B 加粗";
-    bS.title = "直接编辑 Markdown 原文";
     seg.append(bW, bS);
     bar.appendChild(seg);
 
     bar.appendChild(el("span", "np-status", ""));
-    const done = el("button", "ghost sm np-done", "完成");
-    done.onclick = (ev) => { ev.stopPropagation(); closeNote(); };
-    bar.appendChild(done);
     p.appendChild(bar);
 
     const body = el("div", "np-body");
@@ -1871,7 +1840,6 @@
     const btn = $("#btnPending");
     btn.hidden = !S.pending.length;
     btn.innerHTML = "待确认<span class='cnt'>" + S.pending.length + "</span>";
-    btn.title = "查看需要人工确认的提及";
     const body = $("#drawerBody");
     body.textContent = "";
     $("#drawerSub").textContent = S.pending.length + " 条";
@@ -1895,7 +1863,6 @@
       const act = el("div", "pi-a");
 
       const pick = el("button", "ghost sm", "选择目标…");
-      pick.title = "进入选目标模式，点任意一行或搜索标题";
       pick.onclick = () => {
         $("#drawer").hidden = true;
         jumpToRef(v.id);
@@ -1955,7 +1922,6 @@
     const ready = syncReady();
     b.textContent = ready ? "同步" : "启用同步";
     b.className = "ghost" + (ready ? "" : " accent");
-    b.title = ready ? "同步设置 / 立即同步" : "配置仓库与 Token，把改动写回线上";
   }
 
   function buildSavePill() {

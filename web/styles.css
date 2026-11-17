@@ -445,7 +445,6 @@ button.ghost .cnt{
 .np-bar{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .np-label{font-size:10.5px;letter-spacing:.12em;color:#5f6670;text-transform:uppercase}
 .np-tip{font-size:11px;color:#4f565f}
-.np-done{margin-left:auto}
 
 
 /* ================= 响应式 ================= */
@@ -562,7 +561,6 @@ button.ghost .cnt{
   margin-left:auto;white-space:nowrap;
 }
 .np-status:empty{display:none}
-.np-done{margin-left:10px}
 .storagewarn{
   position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:90;
   max-width:min(560px,calc(100vw - 32px));
