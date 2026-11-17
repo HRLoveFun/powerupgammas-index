@@ -63,12 +63,16 @@
   function emptyManual() {
     return { tags: {}, refs: {}, notes: {}, tagDefs: [], pendingDismissed: [] };
   }
-  // 公开版只认构建时写进文件的版本；开发版才叠加浏览器里的暂存
+  // 公开版只认构建时写进文件的版本；开发版只在「有未同步改动」时才用浏览器暂存
   function loadManual() {
     if (IS_DEV) {
       try {
         const raw = localStorage.getItem(LSKEY);
-        if (raw) return Object.assign(emptyManual(), JSON.parse(raw));
+        if (raw) {
+          const o = JSON.parse(raw);
+          // 已经同步过的暂存不再覆盖页面内嵌的版本，避免拿旧数据编辑
+          if (o && o._pending) return Object.assign(emptyManual(), o);
+        }
       } catch (e) {}
     }
     return window.__MANUAL__ ? Object.assign(emptyManual(), JSON.parse(JSON.stringify(window.__MANUAL__))) : emptyManual();
@@ -1871,6 +1875,7 @@
   }
 
   function init() {
+    S.pendingSync = !!S.manual._pending;
     document.body.classList.toggle("dev", IS_DEV);
     if (IS_DEV) {
       buildDevTools();
@@ -1956,8 +1961,6 @@
         toast("已恢复本地修订：笔记 " + c.notes + " · 标签 " + c.tags + " · 引用 " + c.refs);
       }
     }
-
-    S.pendingSync = !!S.manual._pending;
 
     // 起页面后再去拉一次线上版本（file:// 下自动跳过）
     hydrateManual().then(() => {
