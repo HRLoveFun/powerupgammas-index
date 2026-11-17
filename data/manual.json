@@ -4,10 +4,12 @@
     "tags": "{videoId: {add: [tagId], remove: [tagId]}}  手工增删标签",
     "refs": "{videoId: {add: [{to, type, note}], remove: [targetVideoId]}}  手工增删引用；type 取值 mention|series",
     "tagDefs": "[{id, label, color}]  新增自定义标签",
-    "pendingDismissed": "[videoId]  已审阅并忽略的待确认提及"
+    "pendingDismissed": "[videoId]  已审阅并忽略的待确认提及",
+    "notes": "{videoId: \"markdown 文本\"}  行内笔记"
   },
   "tags": {},
   "refs": {},
+  "notes": {},
   "tagDefs": [],
   "pendingDismissed": []
 }

@@ -14,6 +14,7 @@
       <div class="brand">
         <a class="ch" href="https://www.youtube.com/@PowerUpGammas" target="_blank" rel="noopener">PowerUpGammas</a>
         <span class="sub">视频索引</span>
+        <span class="modechip" id="modechip" hidden>开发版</span>
       </div>
       <div class="headmeta" id="headmeta"></div>
       <div class="tools">
@@ -21,10 +22,7 @@
           <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.4 10.4 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
           <input id="search" type="search" placeholder="搜索标题" autocomplete="off">
         </label>
-        <button id="btnPending" class="ghost" hidden></button>
-        <button id="btnExport" class="ghost" hidden></button>
-        <button id="btnReset" class="ghost" hidden>重置</button>
-        <button id="btnEdit" class="ghost">维护</button>
+        <span class="devtools" id="devTools"></span>
       </div>
     </div>
     <nav class="tagbar" id="tagbar" aria-label="标签筛选"></nav>
@@ -50,8 +48,8 @@
 
   <footer class="foot">
     <span id="footstat"></span>
-    <span class="sep">·</span>
-    <span>标签来自频道播放列表；引用按简介链接与系列结构推断，人工修订见 <code>data/manual.json</code></span>
+    <span class="sep" id="footsep">·</span>
+    <span id="footnote"></span>
   </footer>
 
   <div class="drawer" id="drawer" hidden>
@@ -66,6 +64,7 @@
   <div class="toast" id="toast" hidden></div>
 </div>
 <script>//__DATA__</script>
+<script>//__NOTE__</script>
 <script>//__JS__</script>
 </body>
 </html>

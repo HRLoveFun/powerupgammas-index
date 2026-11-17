@@ -2,6 +2,8 @@
   "use strict";
 
   const DATA = window.__DATA__;
+  const MODE = window.__MODE__ || "public";
+  const IS_DEV = MODE === "dev";
   const $ = (s, r) => (r || document).querySelector(s);
   const el = (tag, cls, txt) => {
     const n = document.createElement(tag);
@@ -19,9 +21,9 @@
     pending: DATA.pending.slice(),
     sel: new Set(),
     search: "",
-    active: new Set(),    // 已展开的行（视频 id）
-    edit: false,
-    openEditor: null,
+    active: new Set(),    // 已展开引用的行（视频 id）
+    openEditor: null,     // 展开「标签/引用」面板的行
+    openNote: null,       // 展开笔记编辑器的行
     manual: loadManual(),
     rows: {},
     years: [],
@@ -33,17 +35,17 @@
 
   /* ---------------- manual overlay ---------------- */
   function emptyManual() {
-    return { tags: {}, refs: {}, tagDefs: [], pendingDismissed: [] };
+    return { tags: {}, refs: {}, notes: {}, tagDefs: [], pendingDismissed: [] };
   }
+  // 公开版只认构建时写进文件的版本；开发版才叠加浏览器里的暂存
   function loadManual() {
-    try {
-      const raw = localStorage.getItem(LSKEY);
-      if (raw) {
-        const o = JSON.parse(raw);
-        return Object.assign(emptyManual(), o);
-      }
-    } catch (e) {}
-    return window.__MANUAL__ ? JSON.parse(JSON.stringify(window.__MANUAL__)) : emptyManual();
+    if (IS_DEV) {
+      try {
+        const raw = localStorage.getItem(LSKEY);
+        if (raw) return Object.assign(emptyManual(), JSON.parse(raw));
+      } catch (e) {}
+    }
+    return window.__MANUAL__ ? Object.assign(emptyManual(), JSON.parse(JSON.stringify(window.__MANUAL__))) : emptyManual();
   }
   const hasLocal = () => {
     try { return !!localStorage.getItem(LSKEY); } catch (e) { return false; }
@@ -77,9 +79,11 @@
   }
 
   function recompute() {
+    const notes = S.manual.notes || {};
     S.videos.forEach((v) => {
       v.tags = mergeTags(v);
       v.refs = mergeRefs(v);
+      v.note = (notes[v.id] || "").trim();
     });
   }
 
@@ -103,6 +107,9 @@
       "<i>/</i><b>" + edges + "</b> 条关联";
     $("#footstat").textContent =
       "排序：发布日期从新到旧 · 共 " + S.videos.length + " 个公开视频 · 生成于 " + DATA.generatedAt;
+    $("#footnote").textContent = IS_DEV
+      ? "开发版：点行内空白处写笔记，点「编辑」改标签与引用；改动暂存本地，导出后固化"
+      : "标签来自频道播放列表；引用按简介链接与系列结构推断";
   }
 
   /* ---------------- tags ---------------- */
@@ -182,18 +189,20 @@
       const a = el("a", null, v.title);
       a.href = "https://www.youtube.com/watch?v=" + v.id;
       a.target = "_blank"; a.rel = "noopener";
-      a.title = v.title;
+      a.title = v.title + "（点击打开原视频）";
       ct.appendChild(a);
+      ct.appendChild(el("div", "c-note"));
       row.appendChild(ct);
 
       const cr = el("div", "c-refs");
       row.appendChild(cr);
 
-      row.addEventListener("click", (ev) => {
-        if (ev.target.closest("a,.badge")) return;
-        if (!S.edit) return;
-        toggleEditor(v.id);
-      });
+      if (IS_DEV) {
+        row.addEventListener("click", (ev) => {
+          if (ev.target.closest("a,.badge,.penbtn,button,.np")) return;
+          toggleNote(v.id);
+        });
+      }
 
       list.appendChild(row);
       S.rows[v.id] = row;
@@ -238,9 +247,23 @@
         b.onclick = (ev) => { ev.stopPropagation(); toggleSource(v.id); };
         cr.appendChild(b);
       }
-      const pen = el("button", "penbtn", "编辑");
-      pen.onclick = (ev) => { ev.stopPropagation(); toggleEditor(v.id); };
-      cr.appendChild(pen);
+      if (IS_DEV) {
+        const pen = el("button", "penbtn", "编辑");
+        pen.title = "改标签与引用";
+        pen.onclick = (ev) => { ev.stopPropagation(); toggleEditor(v.id); };
+        cr.appendChild(pen);
+      }
+
+      row.classList.toggle("has-note", !!v.note);
+      const cn = row.querySelector(".c-note");
+      if (cn) {
+        const show = v.note && S.openNote !== v.id;
+        cn.classList.toggle("has", !!show);
+        cn.innerHTML = show ? NoteEditor.render(v.note) : "";
+        cn.onclick = show && !IS_DEV
+          ? (e) => { e.stopPropagation(); cn.classList.toggle("open"); }
+          : null;
+      }
     });
   }
 
@@ -653,11 +676,12 @@
   function refreshDirty() {
     const ex = $("#btnExport"), rs = $("#btnReset");
     if (!ex) return;
+    const notes = S.manual.notes || {};
     const n = Object.keys(S.manual.tags).filter((k) => {
       const r = S.manual.tags[k]; return (r.add || []).length || (r.remove || []).length;
     }).length + Object.keys(S.manual.refs).filter((k) => {
       const r = S.manual.refs[k]; return (r.add || []).length || (r.remove || []).length;
-    }).length;
+    }).length + Object.keys(notes).filter((k) => String(notes[k] || "").trim()).length;
     ex.hidden = !n;
     rs.hidden = !n;
     ex.textContent = "导出修订 (" + n + ")";
@@ -666,7 +690,7 @@
   function exportManual() {
     const out = {
       _comment: "人工维护覆盖层。以 YouTube 视频 ID 为索引；构建时与自动数据合并。",
-      tags: S.manual.tags, refs: S.manual.refs,
+      tags: S.manual.tags, refs: S.manual.refs, notes: S.manual.notes || {},
       tagDefs: S.manual.tagDefs || [],
       pendingDismissed: S.manual.pendingDismissed || [],
     };
@@ -677,6 +701,75 @@
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     toast("已导出 manual.json —— 放入 data/ 后重新构建即可固化");
+  }
+
+  /* ---------------- 行内笔记 ---------------- */
+  function toggleNote(id) {
+    if (S.openNote === id) { closeNote(); return; }
+    if (S.openNote) closeNote();
+    if (S.openEditor) closeEditor(S.openEditor);
+    if (S.active.size) { S.active.clear(); applyFilter(); }
+
+    S.openNote = id;
+    const row = S.rows[id];
+    const v = S.byId[id];
+    row.classList.add("editing");
+    const p = el("div", "np");
+    p.dataset.for = id;
+    buildNotePanel(p, v);
+    row.appendChild(p);
+    paintRows();
+    svgResize();
+
+    const r = row.getBoundingClientRect();
+    if (r.top < 130) row.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
+  function buildNotePanel(p, v) {
+    const bar = el("div", "np-bar");
+    bar.appendChild(el("span", "np-label", "笔记"));
+    bar.appendChild(el("span", "np-tip", "Markdown：# 标题　- 列表　> 引用　**粗体**　`代码`"));
+    const done = el("button", "ghost sm np-done", "完成");
+    done.onclick = (ev) => { ev.stopPropagation(); closeNote(); };
+    bar.appendChild(done);
+    p.appendChild(bar);
+
+    const body = el("div", "np-body");
+    p.appendChild(body);
+
+    const ed = NoteEditor.create(body, {
+      value: v.note || "",
+      onInput: (md) => setNote(v.id, md),
+    });
+    p._editor = ed;
+    p.addEventListener("click", (ev) => ev.stopPropagation());
+    setTimeout(() => ed.focus(), 40);
+  }
+
+  function closeNote() {
+    const id = S.openNote;
+    if (!id) return;
+    S.openNote = null;
+    const row = S.rows[id];
+    if (row) {
+      const p = row.querySelector(".np");
+      if (p) p.remove();
+      row.classList.remove("editing");
+    }
+    paintRows();
+    svgResize();
+  }
+
+  let noteT = null;
+  function setNote(vid, md) {
+    const notes = S.manual.notes || (S.manual.notes = {});
+    const val = String(md || "").trim();
+    if (val) notes[vid] = md; else delete notes[vid];
+    S.byId[vid].note = val;
+    try { localStorage.setItem(LSKEY, JSON.stringify(S.manual)); } catch (e) {}
+    refreshDirty();
+    clearTimeout(noteT);
+    noteT = setTimeout(() => svgResize(), 260);
   }
 
   /* ---------------- pending drawer ---------------- */
@@ -788,12 +881,34 @@
     toastT = setTimeout(() => (t.hidden = true), 2600);
   }
 
+  function buildDevTools() {
+    const box = $("#devTools");
+    if (!box) return;
+    const pend = el("button", "ghost");
+    pend.id = "btnPending"; pend.hidden = true;
+    const exp = el("button", "ghost");
+    exp.id = "btnExport"; exp.hidden = true;
+    const rst = el("button", "ghost", "重置");
+    rst.id = "btnReset"; rst.hidden = true;
+    box.append(pend, exp, rst);
+  }
+
   function init() {
+    document.body.classList.toggle("dev", IS_DEV);
+    if (IS_DEV) {
+      buildDevTools();
+      const chip = $("#modechip");
+      if (chip) chip.hidden = false;
+    } else {
+      const d = $("#drawer");
+      if (d) d.remove();
+    }
+
     recompute();
     renderHead();
     renderTags();
     renderList();
-    renderPending();
+    if (IS_DEV) renderPending();
     refreshDirty();
     applyFilter();
 
@@ -802,38 +917,36 @@
       S.active.clear();
       applyFilter();
     });
-    $("#btnEdit").onclick = () => {
-      S.edit = !S.edit;
-      $("#btnEdit").classList.toggle("on", S.edit);
-      $("#btnEdit").textContent = S.edit ? "完成" : "维护";
-      if (!S.edit && S.openEditor) closeEditor(S.openEditor);
-      document.body.classList.toggle("mode-edit", S.edit);
-      if (S.edit) toast("点击任意行可编辑标签与引用；改动暂存于本地，导出后写入 manual.json");
-    };
-    $("#btnExport").onclick = exportManual;
-    $("#btnReset").onclick = () => {
-      if (!confirm("放弃本地所有人工修订，恢复到文件版本？")) return;
-      localStorage.removeItem(LSKEY);
-      location.reload();
-    };
-    $("#btnPending").onclick = () => {
-      const d = $("#drawer");
-      d.hidden = !d.hidden;
-    };
-    $("#drawerClose").onclick = () => ($("#drawer").hidden = true);
+
+    if (IS_DEV) {
+      $("#btnExport").onclick = exportManual;
+      $("#btnReset").onclick = () => {
+        if (!confirm("放弃本地所有修订（含笔记），恢复到文件版本？")) return;
+        localStorage.removeItem(LSKEY);
+        location.reload();
+      };
+      $("#btnPending").onclick = () => {
+        const d = $("#drawer");
+        d.hidden = !d.hidden;
+      };
+      $("#drawerClose").onclick = () => ($("#drawer").hidden = true);
+    }
+
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        if (sugBox) { sugBox.remove(); sugBox = null; return; }
-        if (!$("#drawer").hidden) { $("#drawer").hidden = true; return; }
-        if (S.active.size) { S.active.clear(); applyFilter(); }
-      }
+      if (e.key !== "Escape") return;
+      if (sugBox) { sugBox.remove(); sugBox = null; return; }
+      if (S.openNote) { closeNote(); return; }
+      const d = $("#drawer");
+      if (d && !d.hidden) { d.hidden = true; return; }
+      if (S.active.size) { S.active.clear(); applyFilter(); }
     });
+
     let rt;
     window.addEventListener("resize", () => {
       clearTimeout(rt);
       rt = setTimeout(() => { svgResize(); }, 120);
     });
-    if (hasLocal()) toast("已载入本地人工修订");
+    if (IS_DEV && hasLocal()) toast("已载入本地修订（含笔记）");
   }
 
   init();

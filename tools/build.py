@@ -286,17 +286,26 @@ def main():
 
     tpl = open(os.path.join(WEB, "template.html")).read()
     css = open(os.path.join(WEB, "styles.css")).read()
+    note = open(os.path.join(WEB, "note.js")).read()
     js = open(os.path.join(WEB, "app.js")).read()
     data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     man = json.dumps(manual, ensure_ascii=False, separators=(",", ":"))
-    html = (tpl.replace("/*__CSS__*/", css)
-               .replace("//__DATA__", "window.__DATA__ = " + data + ";\nwindow.__MANUAL__ = " + man + ";")
-               .replace("//__JS__", js))
-    open(os.path.join(ROOT, "index.html"), "w").write(html)
+
+    # 同一套源码构建两个页面：公开版 / 开发版
+    built = []
+    for mode, fname in (("public", "index.html"), ("dev", "dev.html")):
+        data_js = ('window.__MODE__ = "%s";\nwindow.__DATA__ = %s;\nwindow.__MANUAL__ = %s;'
+                   % (mode, data, man))
+        html = (tpl.replace("/*__CSS__*/", css)
+                   .replace("//__DATA__", data_js)
+                   .replace("//__NOTE__", note)
+                   .replace("//__JS__", js))
+        open(os.path.join(ROOT, fname), "w").write(html)
+        built.append((fname, len(html) // 1024))
 
     edges = sum(len(v) for v in auto_refs.values())
-    print(f"视频 {len(videos)} | 标签 {len(tags)} | 系列边 {edges} | "
-          f"待确认 {len(payload['pending'])} | index.html {len(html)//1024}KB")
+    print(f"视频 {len(videos)} | 标签 {len(tags)} | 系列边 {edges} | 待确认 {len(payload['pending'])}")
+    print("  " + "  ".join(f"{f} {kb}KB" for f, kb in built))
 
 
 if __name__ == "__main__":
