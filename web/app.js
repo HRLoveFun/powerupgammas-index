@@ -24,10 +24,14 @@
     active: new Set(),    // 已展开引用的行（视频 id）
     openEditor: null,     // 展开「标签/引用」面板的行
     openNote: null,       // 展开笔记编辑器的行
+    pick: null,           // 选目标模式：{from, q, idx, listEl, inputEl}
+    pickItems: [],        // 当前候选（供键盘上下移动）
+    undo: null,           // 最近一次引用改动的快照
     manual: loadManual(),
     rows: {},
     years: [],
-    dirty: false,
+    dirty: false,          // 尚未来得及落盘
+    pendingSync: false,    // 有改动还没推到远端
     remoteDiffers: false,   // 本地改动与线上版本不一致
     dirtyKeys: new Set(),   // 自上次同步以来改动过的视频 id
     publishedAt: "",
@@ -172,7 +176,7 @@
     const d = new Date();
     S.manual._savedAt = [d.getHours(), d.getMinutes(), d.getSeconds()]
       .map((n) => String(n).padStart(2, "0")).join(":");
-    S.manual._pending = S.dirty ? 1 : 0;
+    S.manual._pending = S.pendingSync ? 1 : 0;
     try {
       localStorage.setItem(LSKEY, JSON.stringify(S.manual));
       storageOK = true;
@@ -196,7 +200,8 @@
     if (!storageOK) { txt = "本地存储不可用"; cls += " err"; }
     else if (syncing) { txt = "同步中…"; cls += " warn"; }
     else if (S.syncError) { txt = "同步失败 · 仅存本地（" + S.syncError + "）"; cls += " err"; }
-    else if (S.dirty && auto) { txt = "待同步…"; cls += " warn"; }
+    else if (S.pendingSync && auto) { txt = "待同步…"; cls += " warn"; }
+    else if (S.pendingSync && !auto) { txt = "仅存本机 · 未启用同步"; cls += " warn"; }
     else if (S.publishedAt) { txt = "已同步 " + S.publishedAt; cls += " ok"; }
     else if (S.remoteDiffers) { txt = "本地修订 · 未同步"; cls += " warn"; }
     else if (t) { txt = "本地已保存 " + t; cls += " ok"; }
@@ -319,6 +324,7 @@
 
       if (IS_DEV) {
         row.addEventListener("click", (ev) => {
+          if (S.pick) return;
           if (ev.target.closest("a,.badge,.penbtn,button,.np")) return;
           toggleNote(v.id);
         });
@@ -401,7 +407,9 @@
     let shown = 0;
     S.videos.forEach((v) => {
       const ok = matches(v);
-      const show = ok || forced.has(v.id);
+      // 选目标时源行必须留在视野里，否则筛选会把面板一起藏掉
+      const pinned = !!(S.pick && S.pick.from === v.id);
+      const show = ok || forced.has(v.id) || pinned;
       const row = S.rows[v.id];
       row.classList.toggle("hidden", !show);
       row.classList.toggle("is-temp", show && !ok);
@@ -418,7 +426,7 @@
 
   /* ---------------- references & lines ---------------- */
   function sameSeries(a, b) {
-    return !!a.series && a.series === b.series;
+    return !!(a && b && a.series && a.series === b.series);
   }
 
   // 圆点只表示「跨系列的明确引用」；同系列内部的关系由方框表达
@@ -616,6 +624,7 @@
   function closeEditor(id) {
     const row = S.rows[id];
     if (!row) return;
+    if (S.pick && S.pick.from === id) clearPick();
     row.classList.remove("editing");
     const ed = row.querySelector(".editor");
     if (ed) ed.remove();
@@ -631,8 +640,29 @@
     drawLinks();
   }
 
+  const shortTitle = (t, n) => (t && t.length > n ? t.slice(0, n) + "…" : t || "");
+  function isSeriesRef(v, r) {
+    const t = S.byId[r.to];
+    return r.type === "series" || (!!t && sameSeries(v, t));
+  }
+  function isManualRef(vid, to) {
+    const rule = (S.manual.refs || {})[vid];
+    return !!(rule && (rule.add || []).some((x) => x.to === to));
+  }
+  function refKind(v, r) {
+    const ser = isSeriesRef(v, r);
+    const base = ser ? (r.type === "series" ? "系列关联" : "系列内引用")
+      : r.label ? "简介链接：" + r.label : "明确引用";
+    return base + " · " + (isManualRef(v.id, r.to) ? "手动添加" : "自动生成");
+  }
+  const overlapTags = (a, b) => {
+    const bt = b.tags || [];
+    return (a.tags || []).filter((t) => t !== "unfiled" && bt.indexOf(t) >= 0).length;
+  };
+
   function buildEditor(box, v) {
     box.textContent = "";
+    box._refsBody = null;
 
     // 标签
     const r1 = el("div", "ed-row");
@@ -665,47 +695,14 @@
     r1.appendChild(b1);
     box.appendChild(r1);
 
-    // 引用
+    // 引用：全部列出，同系列用虚线，不再隐藏
     const r2 = el("div", "ed-row");
     r2.appendChild(el("div", "ed-label", "引用"));
     const b2 = el("div", "ed-body");
-    const editRefs = mentionTargets(v);
-    const seriesOnly = v.refs.length - editRefs.length;
-    if (!editRefs.length) b2.appendChild(el("span", "lg", "暂无跨系列的明确引用"));
-    editRefs.forEach((r) => {
-      const chip = el("span", "refitem" + (r.type === "series" ? " series" : ""));
-      chip.appendChild(el("span", "rdot"));
-      const t = S.byId[r.to].title;
-      chip.title = t;
-      const short = t.length > 18 ? t.slice(0, 18) + "…" : t;
-      chip.appendChild(el("span", null, short));
-      const x = el("span", "x", "×");
-      x.onclick = (ev) => {
-        ev.stopPropagation();
-        setRef(v.id, r.to, false);
-        buildEditor(box, S.byId[v.id]);
-        paintRows(); applyFilter();
-      };
-      chip.appendChild(x);
-      b2.appendChild(chip);
-    });
-    if (seriesOnly > 0) {
-      b2.appendChild(el("span", "lg dim", "另有 " + seriesOnly + " 条同系列关系，已由方框归组"));
-    }
+    box._refsBody = b2;
+    renderRefChips(b2, v);
     r2.appendChild(b2);
     box.appendChild(r2);
-
-    // 添加引用
-    const r3 = el("div", "ed-row");
-    r3.appendChild(el("div", "ed-label", ""));
-    const b3 = el("div", "ed-body");
-    const inp = el("input", "refinput");
-    inp.placeholder = "输入标题以添加引用…";
-    inp.addEventListener("click", (e) => e.stopPropagation());
-    inp.addEventListener("input", () => showSug(inp, v));
-    b3.appendChild(inp);
-    r3.appendChild(b3);
-    box.appendChild(r3);
 
     const r4 = el("div", "ed-row");
     r4.appendChild(el("div", "ed-label", ""));
@@ -719,51 +716,344 @@
     b4.appendChild(cbtn);
     r4.appendChild(b4);
     box.appendChild(r4);
+
+    if (S.pick && S.pick.from === v.id) box.appendChild(buildPicker(v));
   }
 
-  let sugBox = null;
-  function showSug(inp, v) {
-    if (sugBox) sugBox.remove();
-    const q = inp.value.trim().toLowerCase();
-    if (q.length < 1) return;
-    const hits = S.videos
-      .filter((x) => x.id !== v.id && !v.refs.some((r) => r.to === x.id))
-      .filter((x) => x.title.toLowerCase().indexOf(q) >= 0)
-      .slice(0, 40);
-    if (!hits.length) return;
-    const box = el("div", "sug");
-    hits.forEach((x) => {
-      const d = el("div");
-      d.appendChild(el("span", "sug-d", x.date));
-      d.appendChild(document.createTextNode(x.title));
-      d.onclick = (ev) => {
-        ev.stopPropagation();
-        setRef(v.id, x.id, true);
-        box.remove(); sugBox = null;
-        const ed = S.rows[v.id].querySelector(".editor");
-        if (ed) buildEditor(ed, S.byId[v.id]);
-        paintRows(); applyFilter();
-      };
-      box.appendChild(d);
+  function renderRefChips(b2, v) {
+    b2.textContent = "";
+    const refs = (v.refs || []).slice().sort((a, b) =>
+      (isSeriesRef(v, a) ? 1 : 0) - (isSeriesRef(v, b) ? 1 : 0) || a.n - b.n);
+    if (!refs.length) b2.appendChild(el("span", "lg", "暂无引用，点右侧「＋ 添加引用」"));
+    refs.forEach((r) => {
+      const t = S.byId[r.to];
+      if (!t) return;
+      const series = isSeriesRef(v, r);
+      const chip = el("span", "refitem" + (series ? " series" : ""));
+      chip.appendChild(el("span", "rdot"));
+      chip.appendChild(el("span", "rd", t.date.slice(2)));
+      chip.appendChild(el("span", "rt", shortTitle(t.title, 14)));
+      if (isManualRef(v.id, r.to)) {
+        const mk = el("span", "mk", "手");
+        mk.title = "手动添加";
+        chip.appendChild(mk);
+      }
+      chip.title = t.title + "\n" + refKind(v, r) + (r.type === "series" ? "\n系列关系由标题结构决定，不能单独删除" : "") + "\n点击跳到该行";
+      chip.onclick = (ev) => { ev.stopPropagation(); jumpToRef(r.to); };
+      if (r.type !== "series") {
+        const x = el("span", "x", "×");
+        x.title = "删除这条引用";
+        x.onclick = (ev) => {
+          ev.stopPropagation();
+          setRef(v.id, r.to, false);
+        };
+        chip.appendChild(x);
+      }
+      b2.appendChild(chip);
     });
-    const r = inp.getBoundingClientRect();
-    box.style.position = "absolute";
-    box.style.left = window.scrollX + r.left + "px";
-    box.style.top = window.scrollY + r.bottom + 4 + "px";
-    box.style.position = "fixed";
-    box.style.left = r.left + "px";
-    box.style.top = r.bottom + 4 + "px";
-    document.body.appendChild(box);
-    sugBox = box;
-  }
-  document.addEventListener("click", (e) => {
-    if (sugBox && !sugBox.contains(e.target) && !e.target.classList.contains("refinput")) {
-      sugBox.remove(); sugBox = null;
+    const picking = !!(S.pick && S.pick.from === v.id);
+    const add = el("button", "tag mini add", picking ? "选目标中…" : "＋ 添加引用");
+    add.title = picking ? "先在下方选完目标，或按 Esc 结束" : "进入选目标模式：点列表任意一行，或搜索";
+    if (picking) {
+      add.disabled = true;
+      add.style.opacity = ".55";
+      add.style.cursor = "default";
+    } else {
+      add.onclick = (ev) => { ev.stopPropagation(); enterPick(v.id); };
     }
-  });
+    b2.appendChild(add);
+    const nSeries = refs.filter((r) => isSeriesRef(v, r)).length;
+    if (nSeries) {
+      b2.appendChild(el("span", "lg dim", "虚线 " + nSeries + " 条为系列内关联，不画线；组内关系由方框表达"));
+    }
+  }
+
+  function refreshRefs(vid) {
+    const row = S.rows[vid];
+    const box = row && row.querySelector(".editor");
+    if (!box || !box._refsBody) return;
+    renderRefChips(box._refsBody, S.byId[vid]);
+    if (S.pick && S.pick.from === vid) {
+      renderPickList(S.byId[vid]);
+      markPickRows();
+    }
+    svgResize();
+  }
+
+  function jumpToRef(id) {
+    const row = S.rows[id];
+    if (!row) return;
+    if (row.classList.contains("hidden")) {
+      S.sel.clear(); S.search = ""; $("#search").value = "";
+      renderTags(); applyFilter();
+    }
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+    row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash");
+  }
+
+  /* ---------------- 选目标模式 ---------------- */
+  function buildPicker(v) {
+    const wrap = el("div", "ed-pick");
+    const head = el("div", "pk-head");
+    head.appendChild(el("span", "pk-k", "选目标"));
+    head.appendChild(el("span", "pk-sub",
+      "为《" + shortTitle(v.title, 20) + "》添加引用 · 点列表任意一行，或直接搜索"));
+    const end = el("button", "ghost sm", "结束");
+    end.title = "退出选目标（Esc）";
+    end.onclick = (ev) => { ev.stopPropagation(); exitPick(); };
+    head.appendChild(end);
+    wrap.appendChild(head);
+
+    const inp = el("input", "refinput pk-input");
+    inp.type = "text";
+    inp.value = S.pick.q || "";
+    inp.placeholder = "留空：按同系列 / 同标签 / 最近给候选；输入即筛";
+    inp.autocomplete = "off";
+    inp.addEventListener("click", (e) => e.stopPropagation());
+    inp.addEventListener("input", () => {
+      S.pick.q = inp.value;
+      S.pick.idx = 0;
+      renderPickList(v);
+    });
+    inp.addEventListener("keydown", onPickKey);
+    wrap.appendChild(inp);
+
+    const list = el("div", "pk-list");
+    wrap.appendChild(list);
+    S.pick.listEl = list;
+    S.pick.inputEl = inp;
+    renderPickList(v);
+    setTimeout(() => {
+      if (!S.pick || !S.pick.inputEl) return;
+      try { S.pick.inputEl.focus({ preventScroll: true }); } catch (e) { S.pick.inputEl.focus(); }
+    }, 0);
+    return wrap;
+  }
+
+  function pickScore(from, x, toks) {
+    const hay = (x.title + " " + (x.series || "")).toLowerCase();
+    if (!toks.every((t) => hay.indexOf(t) >= 0)) return null;
+    let s = 0;
+    if (sameSeries(from, x)) s += 1000;
+    s += overlapTags(from, x) * 120;
+    s -= Math.abs(x.n - from.n) * 0.8;
+    return s;
+  }
+
+  function renderPickList(v) {
+    const host = S.pick && S.pick.listEl;
+    if (!host) return;
+    const st = host.scrollTop;
+    host.textContent = "";
+    const q = (S.pick.q || "").trim();
+    const toks = q ? q.toLowerCase().split(/\s+/).filter(Boolean) : [];
+    const used = new Set((v.refs || []).map((r) => r.to));
+    const hit = [];
+    const add = (x, group) => {
+      if (x.id === v.id || hit.some((h) => h.x.id === x.id)) return;
+      hit.push({ x: x, group: group });
+    };
+
+    if (!toks.length) {
+      const mates = v.series ? S.videos.filter((x) => x.series === v.series && x.id !== v.id) : [];
+      mates.slice().sort((a, b) => a.n - b.n).forEach((x) => add(x, "同系列 " + mates.length + " 期"));
+      const inMates = new Set(mates.map((m) => m.id));
+      S.videos.filter((x) => x.id !== v.id && !inMates.has(x.id))
+        .map((x) => ({ x: x, o: overlapTags(v, x) }))
+        .filter((o) => o.o > 0)
+        .sort((a, b) => b.o - a.o || Math.abs(a.x.n - v.n) - Math.abs(b.x.n - v.n))
+        .slice(0, 8)
+        .forEach((o) => add(o.x, "同标签"));
+      S.videos.filter((x) => x.id !== v.id)
+        .sort((a, b) => Math.abs(a.n - v.n) - Math.abs(b.n - v.n))
+        .slice(0, 8)
+        .forEach((x) => add(x, "最近"));
+    } else {
+      S.videos.filter((x) => x.id !== v.id)
+        .map((x) => ({ x: x, s: pickScore(v, x, toks) }))
+        .filter((o) => o.s !== null)
+        .sort((a, b) => b.s - a.s)
+        .slice(0, 30)
+        .forEach((o) => add(o.x, "搜索结果"));
+    }
+
+    if (!hit.length) {
+      host.appendChild(el("div", "pk-empty",
+        q ? "没有匹配的标题。换个词，或清空搜索按系列 / 标签找。" : "没有可推荐的候选，直接搜标题。"));
+      S.pickItems = [];
+      S.pickIdx = 0;
+      return;
+    }
+    let last = null;
+    hit.forEach((o, i) => {
+      if (o.group !== last) {
+        last = o.group;
+        host.appendChild(el("div", "pk-group", o.group));
+      }
+      host.appendChild(pickItem(v, o.x, used, toks, i));
+    });
+    S.pickItems = hit.map((h) => h.x);
+    S.pickIdx = Math.min(S.pick.idx || 0, S.pickItems.length - 1);
+    if (S.pickIdx < 0) S.pickIdx = 0;
+    // 光标不要停在已引用的条目上：优先落到后面第一个可选项
+    if (S.pickItems[S.pickIdx] && used.has(S.pickItems[S.pickIdx].id)) {
+      let next = S.pickItems.findIndex((x, i) => i > S.pickIdx && !used.has(x.id));
+      if (next < 0) next = S.pickItems.findIndex((x) => !used.has(x.id));
+      if (next >= 0) S.pickIdx = next;
+    }
+    S.pick.idx = S.pickIdx;
+    markPickCursor();
+    host.scrollTop = st;
+  }
+
+  function pickItem(from, x, used, toks, i) {
+    const item = el("div", "pk-item");
+    item.dataset.i = i;
+    const on = used.has(x.id);
+    const rev = (x.refs || []).some((r) => r.to === from.id);
+    const ser = sameSeries(from, x);
+    if (on) item.classList.add("used");
+    item.appendChild(el("span", "pk-d", x.date));
+    const tt = el("span", "pk-t");
+    tt.appendChild(highlightText(x.title, toks));
+    item.appendChild(tt);
+    const tags = (x.tags || []).filter((t) => t !== "unfiled").slice(0, 2)
+      .map((t) => (S.tagById[t] ? S.tagById[t].label : t));
+    const meta = [x.series || "", tags.join(" · ")].filter(Boolean).join(" ｜ ");
+    if (meta) item.appendChild(el("span", "pk-m", meta));
+    const st = el("span", "pk-st");
+    if (on) { st.textContent = "已引用"; st.classList.add("on"); }
+    else if (rev) { st.textContent = "反向已存在"; st.classList.add("rev"); }
+    else if (ser) { st.textContent = "同系列"; st.classList.add("ser"); }
+    if (st.textContent) item.appendChild(st);
+    item.title = x.title + (on ? "\n已引用" : rev ? "\n对方也引用了本期" : "") + (ser ? "\n同系列" : "");
+    item.onclick = (ev) => {
+      ev.stopPropagation();
+      choosePick(x);
+    };
+    return item;
+  }
+
+  function choosePick(x) {
+    if (!S.pick) return;
+    const from = S.byId[S.pick.from];
+    if (!from || !x) return;
+    if ((from.refs || []).some((r) => r.to === x.id)) { toast("这两期已经是引用关系"); return; }
+    const rev = (x.refs || []).some((r) => r.to === from.id);
+    setRef(from.id, x.id, true, { msg: rev ? "已添加引用（对方也引用了本期）" : "已添加引用" });
+    if (S.pick && S.pick.pending) {
+      const pid = S.pick.pending;
+      S.pick.pending = null;
+      dismissPending(pid);
+    }
+  }
+
+  function onPickKey(e) {
+    if (e.key === "Escape") {
+      e.preventDefault(); e.stopPropagation(); exitPick(); return;
+    }
+    if (!S.pick) return;
+    const n = (S.pickItems || []).length;
+    if (!n) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      S.pick.idx = (S.pick.idx + (e.key === "ArrowDown" ? 1 : -1) + n) % n;
+      markPickCursor();
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      choosePick(S.pickItems[S.pick.idx]);
+    }
+  }
+
+  function markPickCursor() {
+    const host = S.pick && S.pick.listEl;
+    if (!host) return;
+    const cur = host.querySelector('.pk-item[data-i="' + S.pick.idx + '"]');
+    Array.from(host.querySelectorAll(".pk-item")).forEach((n) => n.classList.toggle("cur", n === cur));
+    if (!cur) return;
+    const hr = host.getBoundingClientRect(), ir = cur.getBoundingClientRect();
+    if (ir.top < hr.top) host.scrollTop += ir.top - hr.top - 4;
+    else if (ir.bottom > hr.bottom) host.scrollTop += ir.bottom - hr.bottom + 4;
+  }
+
+  function highlightText(text, toks) {
+    if (!toks || !toks.length) return document.createTextNode(text);
+    const lower = text.toLowerCase();
+    const ranges = [];
+    toks.forEach((t) => {
+      let i = lower.indexOf(t);
+      while (i >= 0) { ranges.push([i, i + t.length]); i = lower.indexOf(t, i + t.length); }
+    });
+    if (!ranges.length) return document.createTextNode(text);
+    ranges.sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    ranges.forEach((r) => {
+      const last = merged[merged.length - 1];
+      if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+      else merged.push(r.slice());
+    });
+    const frag = document.createDocumentFragment();
+    let p = 0;
+    merged.forEach(([s, e]) => {
+      if (s > p) frag.appendChild(document.createTextNode(text.slice(p, s)));
+      frag.appendChild(el("mark", null, text.slice(s, e)));
+      p = e;
+    });
+    if (p < text.length) frag.appendChild(document.createTextNode(text.slice(p)));
+    return frag;
+  }
+
+  function markPickRows() {
+    const from = S.pick ? S.byId[S.pick.from] : null;
+    const used = new Set(from ? (from.refs || []).map((r) => r.to) : []);
+    Object.keys(S.rows).forEach((id) => {
+      const row = S.rows[id];
+      row.classList.toggle("pick-src", !!from && id === from.id);
+      row.classList.toggle("pick-used", used.has(id));
+    });
+  }
+
+  function clearPick() {
+    S.pick = null;
+    S.pickItems = [];
+    document.body.classList.remove("picking");
+    Object.keys(S.rows).forEach((id) => S.rows[id].classList.remove("pick-src", "pick-used"));
+  }
+
+  function enterPick(id, pendingId) {
+    const v = S.byId[id];
+    if (!v) return;
+    if (S.pick && S.pick.from === id) { exitPick(); return; }
+    if (S.pick) clearPick();
+    S.pick = { from: id, q: "", idx: 0, listEl: null, inputEl: null, pending: pendingId || null };
+    S.pickItems = [];
+    document.body.classList.add("picking");
+    if (S.openEditor !== id) toggleEditor(id);
+    const box = S.rows[id] && S.rows[id].querySelector(".editor");
+    if (box) buildEditor(box, v);
+    markPickRows();
+    // 让源行连同上面的 chip 一起留在视野里，别被吸顶栏遮住
+    const row = S.rows[id];
+    if (row && row.getBoundingClientRect().top < 130) {
+      row.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+    svgResize();
+  }
+
+  function exitPick() {
+    if (!S.pick) return;
+    const id = S.pick.from;
+    clearPick();
+    const box = S.rows[id] && S.rows[id].querySelector(".editor");
+    if (box) buildEditor(box, S.byId[id]);
+    svgResize();
+  }
 
   function setTag(vid, tagId, on) {
     S.dirty = true;
+    S.pendingSync = true;
     S.dirtyKeys.add(vid);
     const m = S.manual.tags;
     const rule = m[vid] || (m[vid] = { add: [], remove: [] });
@@ -779,8 +1069,11 @@
     commit();
   }
 
-  function setRef(vid, toId, on) {
+  function setRef(vid, toId, on, opts) {
+    opts = opts || {};
+    const before = S.manual.refs[vid] ? JSON.parse(JSON.stringify(S.manual.refs[vid])) : null;
     S.dirty = true;
+    S.pendingSync = true;
     S.dirtyKeys.add(vid);
     const m = S.manual.refs;
     const rule = m[vid] || (m[vid] = { add: [], remove: [] });
@@ -794,7 +1087,27 @@
         rule.remove.push(toId);
       }
     }
+    if (!rule.add.length && !rule.remove.length) delete m[vid];
     commit();
+    refreshRefs(vid);
+    if (!opts.silent) {
+      S.undo = { kind: "ref", vid: vid, before: before };
+      toast(opts.msg || (on ? "已添加引用" : "已删除引用"), "撤销", undoRef, 4200);
+    }
+  }
+
+  function undoRef() {
+    const u = S.undo;
+    if (!u || u.kind !== "ref" || !S.byId[u.vid]) return;
+    S.undo = null;
+    if (u.before) S.manual.refs[u.vid] = u.before;
+    else delete S.manual.refs[u.vid];
+    S.dirty = true;
+    S.pendingSync = true;
+    S.dirtyKeys.add(u.vid);
+    commit();
+    refreshRefs(u.vid);
+    toast("已撤销");
   }
 
   function commit() {
@@ -1010,8 +1323,16 @@
     return !!(c.auto && c.token && c.repo);
   }
 
+  let hintedNoSync = false;
   function scheduleSync() {
-    if (!autoSyncOn()) { updateSaveState(); return; }
+    if (!autoSyncOn()) {
+      updateSaveState();
+      if (!hintedNoSync) {
+        hintedNoSync = true;
+        toast("改动只存在这台浏览器，点右上角「启用同步」才会写进仓库");
+      }
+      return;
+    }
     clearTimeout(syncTimer);
     syncTimer = setTimeout(() => runSync(true), 2200);
   }
@@ -1027,11 +1348,13 @@
       if (r.data) absorbManual(r.data);
       S.publishedAt = stamp();
       S.dirty = false;
+      S.pendingSync = false;
       S.remoteDiffers = false;
       S.dirtyKeys.clear();
       S.manual._savedAt = S.publishedAt;
       S.manual._pending = 0;
       persistQuiet();
+      refreshPublishBtn();
     } catch (e) {
       S.syncError = e.message || "同步失败";
     } finally {
@@ -1099,6 +1422,8 @@
         auto: autoIn.checked,
       };
       saveGhConfig(c);
+      refreshPublishBtn();
+      updateSaveState();
       return c;
     };
 
@@ -1113,7 +1438,7 @@
         if (!r.ok) throw new Error("拉取失败");
         adoptManual(await r.json());
         try { localStorage.removeItem(LSKEY); } catch (e) {}
-        S.remoteDiffers = false; S.dirty = false; S.publishedAt = ""; S.syncError = ""; S.dirtyKeys.clear();
+        S.remoteDiffers = false; S.dirty = false; S.pendingSync = false; S.publishedAt = ""; S.syncError = ""; S.dirtyKeys.clear();
         updateSaveState();
         msg.className = "modal-msg ok";
         msg.textContent = "已切换到线上版本。";
@@ -1391,6 +1716,7 @@
   let noteT = null;
   function setNote(vid, md) {
     S.dirty = true;
+    S.pendingSync = true;
     S.dirtyKeys.add(vid);
     const notes = S.manual.notes || (S.manual.notes = {});
     const val = String(md || "").trim();
@@ -1416,7 +1742,7 @@
     box.appendChild(p2);
 
     const ul = el("ul");
-    [["有同系列候选时", "在下拉里选一期点「确认」，即建立一条明确引用（蓝色圆点）。"],
+    [["点「选择目标…」", "进入选目标模式：同系列 / 同标签 / 最近已经排好，点任意一行或搜标题，选中即建立引用。"],
      ["想先看看上下文", "点「定位」跳到该视频所在行（若正被筛选隐藏会自动展开）。"],
      ["确定没有对应视频", "点「忽略」，这条不再出现（记在 manual.json 的 pendingDismissed）。"]
     ].forEach(([k, v]) => {
@@ -1460,30 +1786,19 @@
       box.appendChild(el("div", "pi-e", p.evidence));
       const act = el("div", "pi-a");
 
-      const mates = v.series ? S.videos.filter((x) => x.series === v.series && x.id !== v.id) : [];
-      if (mates.length) {
-        const sel = el("select");
-        sel.appendChild(new Option("关联到同系列的…", ""));
-        mates.slice(0, 30).forEach((m) => sel.appendChild(new Option(m.date + " · " + m.title.slice(0, 22), m.id)));
-        act.appendChild(sel);
-        const ok = el("button", "ghost sm", "确认");
-        ok.onclick = () => {
-          if (!sel.value) return;
-          setRef(v.id, sel.value, true);
-          dismissPending(p.videoId);
-        };
-        act.appendChild(ok);
-      } else {
-        act.appendChild(el("span", "lg", "没有同系列候选，可点该行的「编辑」手动添加"));
-      }
+      const pick = el("button", "ghost sm", "选择目标…");
+      pick.title = "进入选目标模式，点任意一行或搜索标题";
+      pick.onclick = () => {
+        $("#drawer").hidden = true;
+        jumpToRef(v.id);
+        enterPick(v.id, p.videoId);
+      };
+      act.appendChild(pick);
 
       const loc = el("button", "ghost sm", "定位");
       loc.onclick = () => {
         $("#drawer").hidden = true;
-        const row = S.rows[v.id];
-        if (row.classList.contains("hidden")) { S.sel.clear(); S.search = ""; $("#search").value = ""; renderTags(); applyFilter(); }
-        row.scrollIntoView({ block: "center", behavior: "smooth" });
-        row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash");
+        jumpToRef(v.id);
       };
       act.appendChild(loc);
 
@@ -1506,11 +1821,33 @@
 
   /* ---------------- misc ---------------- */
   let toastT = null;
-  function toast(msg) {
+  function toast(msg, actLabel, act, ms) {
     const t = $("#toast");
-    t.textContent = msg; t.hidden = false;
+    t.textContent = "";
+    t.appendChild(document.createTextNode(msg));
+    if (actLabel && act) {
+      const b = el("button", "toast-act", actLabel);
+      b.onclick = () => {
+        t.hidden = true;
+        clearTimeout(toastT);
+        act();
+      };
+      t.appendChild(b);
+    } else {
+      S.undo = null;
+    }
+    t.hidden = false;
     clearTimeout(toastT);
-    toastT = setTimeout(() => (t.hidden = true), 2600);
+    toastT = setTimeout(() => { t.hidden = true; S.undo = null; }, ms || 2600);
+  }
+
+  function refreshPublishBtn() {
+    const b = $("#btnPublish");
+    if (!b) return;
+    const ready = syncReady();
+    b.textContent = ready ? "同步" : "启用同步";
+    b.className = "ghost" + (ready ? "" : " accent");
+    b.title = ready ? "同步设置 / 立即同步" : "配置仓库与 Token，把改动写回线上";
   }
 
   function buildDevTools() {
@@ -1518,14 +1855,14 @@
     if (!box) return;
     const pend = el("button", "ghost");
     pend.id = "btnPending"; pend.hidden = true;
-    const pub = el("button", "ghost", "同步");
+    const pub = el("button", "ghost accent", "启用同步");
     pub.id = "btnPublish";
-    pub.title = "同步设置 / 立即同步";
     const exp = el("button", "ghost");
     exp.id = "btnExport"; exp.hidden = true;
     const rst = el("button", "ghost", "重置");
     rst.id = "btnReset"; rst.hidden = true;
     box.append(pend, pub, exp, rst);
+    refreshPublishBtn();
   }
 
   function init() {
@@ -1546,6 +1883,24 @@
     if (IS_DEV) renderPending();
     refreshDirty();
     applyFilter();
+
+    // 选目标模式：整张列表都成为点选目标；捕获阶段拦掉链接跳转与笔记展开
+    if (IS_DEV) {
+      $("#list").addEventListener("click", (ev) => {
+        if (!S.pick) return;
+        if (ev.target.closest(".editor")) return;
+        const row = ev.target.closest(".row");
+        if (!row || !row.dataset.id) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const from = S.byId[S.pick.from];
+        if (!from) return;
+        const id = row.dataset.id;
+        if (id === from.id) { toast("这就是当前行，点别的行"); return; }
+        if ((from.refs || []).some((r) => r.to === id)) { toast("这两期已经是引用关系"); return; }
+        choosePick(S.byId[id]);
+      }, true);
+    }
 
     $("#search").addEventListener("input", (e) => {
       S.search = e.target.value.trim().toLowerCase();
@@ -1570,7 +1925,7 @@
 
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
-      if (sugBox) { sugBox.remove(); sugBox = null; return; }
+      if (S.pick) { exitPick(); return; }
       if (S.openNote) { closeNote(); return; }
       const d = $("#drawer");
       if (d && !d.hidden) { d.hidden = true; return; }
@@ -1584,7 +1939,7 @@
     });
     if (IS_DEV) {
       // 关标签页/切后台时再落一次盘，避免移动端 Safari 不触发 beforeunload
-      const flush = () => { if (S.dirty) persist(); };
+      const flush = () => { if (S.pendingSync) persist(); };
       window.addEventListener("pagehide", flush);
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") flush();
@@ -1596,6 +1951,8 @@
         toast("已恢复本地修订：笔记 " + c.notes + " · 标签 " + c.tags + " · 引用 " + c.refs);
       }
     }
+
+    S.pendingSync = !!S.manual._pending;
 
     // 起页面后再去拉一次线上版本（file:// 下自动跳过）
     hydrateManual().then(() => {
