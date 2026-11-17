@@ -182,8 +182,10 @@
   /* ---------------- 本地持久化 ---------------- */
   let storageOK = true;
   let storageWarned = false;
+  let resetting = false;     // 重置期间禁止任何落盘，否则 pagehide / 防抖会把删掉的又写回来
 
   function persist() {
+    if (resetting) return;
     const d = new Date();
     S.manual._savedAt = [d.getHours(), d.getMinutes(), d.getSeconds()]
       .map((n) => String(n).padStart(2, "0")).join(":");
@@ -405,16 +407,39 @@
         const show = v.note && S.openNote !== v.id;
         cn.classList.toggle("has", !!show);
         cn.innerHTML = show ? NoteEditor.render(v.note) : "";
-        cn.onclick = show && !IS_DEV
-          ? (e) => { e.stopPropagation(); cn.classList.toggle("open"); }
-          : null;
+        markNoteOverflow(cn);
+        if (show) {
+          cn.title = IS_DEV ? "点击展开 / 收起；点行内空白编辑" : "点击展开 / 收起";
+          cn.onclick = (e) => {
+            e.stopPropagation();
+            // 有折起来的尾巴就展开/收起；本来就没折，开发版点它直接进编辑
+            if (cn.classList.contains("clipped") || cn.classList.contains("open")) {
+              cn.classList.toggle("open");
+              markNoteOverflow(cn);
+            } else if (IS_DEV) {
+              toggleNote(v.id);
+            }
+          };
+        } else {
+          cn.onclick = null;
+          cn.removeAttribute("title");
+        }
       }
     });
   }
 
+  // 只有真的超出三行才加渐隐，否则一两行的短笔记会被那条渐变盖住
+  function markNoteOverflow(cn) {
+    if (!cn || !cn.classList.contains("has") || !cn.offsetParent) return;
+    cn.classList.toggle("clipped", cn.scrollHeight > cn.clientHeight + 1);
+  }
+
   /* ---------------- filtering ---------------- */
   function matches(v) {
-    if (S.search && v.title.toLowerCase().indexOf(S.search) < 0) return false;
+    if (S.search) {
+      const hay = v.title + " " + (v.note || "");
+      if (hay.toLowerCase().indexOf(S.search) < 0) return false;
+    }
     if (!S.sel.size) return true;
     return v.tags.some((t) => S.sel.has(t));
   }
@@ -432,6 +457,8 @@
       const row = S.rows[v.id];
       row.classList.toggle("hidden", !show);
       row.classList.toggle("is-temp", show && !ok);
+      // 隐藏时量不出高度，重新显示后补量一次，否则长笔记收起时没有渐隐
+      if (show && v.note && S.openNote !== v.id) markNoteOverflow(row.querySelector(".c-note"));
       if (show) { shown++; yearOn[v.date.slice(0, 4)] = true; }
     });
     S.years.forEach((y) => y.el.classList.toggle("hidden", !yearOn[y.year]));
@@ -628,6 +655,7 @@
 
   /* ---------------- editor ---------------- */
   function toggleEditor(id) {
+    if (S.openNote) closeNote();                       // 笔记面板与标签/引用面板不同时展开
     if (S.openEditor && S.openEditor !== id) closeEditor(S.openEditor);
     if (S.openEditor === id) { closeEditor(id); return; }
     S.openEditor = id;
@@ -722,6 +750,20 @@
     renderRefChips(b2, v);
     r2.appendChild(b2);
     box.appendChild(r2);
+
+    // 笔记：列表里的笔记只负责「看」，编辑入口放在这里，别让人靠猜空白
+    const r3 = el("div", "ed-row");
+    r3.appendChild(el("div", "ed-label", "笔记"));
+    const b3 = el("div", "ed-body");
+    const nbtn = el("button", "ghost sm", v.note ? "编辑笔记" : "写笔记");
+    nbtn.onclick = (ev) => { ev.stopPropagation(); toggleNote(v.id); };
+    b3.appendChild(nbtn);
+    if (v.note) {
+      const head = (v.note.split("\n").find((l) => l.trim()) || "").replace(/^(#{1,3}\s+|[-*]\s+|\d+\.\s+|>\s?)+/, "");
+      b3.appendChild(el("span", "ed-note", head.slice(0, 42) + (head.length > 42 ? "…" : "")));
+    }
+    r3.appendChild(b3);
+    box.appendChild(r3);
 
     const r4 = el("div", "ed-row");
     r4.appendChild(el("div", "ed-label", ""));
@@ -1156,7 +1198,7 @@
     const c = countEdits();
     const n = c.tags + c.refs + c.notes;
     ex.hidden = !n;
-    rs.hidden = !n;
+    rs.hidden = !S.pendingSync;   // 只有还没同步到仓库的本地改动才有「重置」可言
     ex.textContent = "导出修订 (" + n + ")";
     ex.title = "笔记 " + c.notes + " · 标签 " + c.tags + " · 引用 " + c.refs;
   }
@@ -1379,6 +1421,7 @@
       S.manual._pending = 0;
       persistQuiet();
       refreshPublishBtn();
+      refreshDirty();          // 同步完成后「重置」应当收起
     } catch (e) {
       S.syncError = e.message || "同步失败";
     } finally {
@@ -1390,7 +1433,18 @@
   }
 
   function absorbManual(data) {
+    // 同步回包用的是发出请求那一刻的本机副本：正在编辑的笔记以页面里的内容为准，
+    // 否则停手后 2 秒触发同步，往返途中敲的几个字会被整份替换掉。
+    const panel = document.querySelector(".np");
+    const editingId = S.openNote;
+    const editingMd = panel && panel._editor ? panel._editor.getValue() : null;
+
     S.manual = Object.assign(emptyManual(), data);
+    if (editingId && editingMd != null) {
+      S.manual.notes = S.manual.notes || {};
+      if (String(editingMd).trim()) S.manual.notes[editingId] = editingMd;
+      else delete S.manual.notes[editingId];
+    }
     recompute();
     paintRows();
     renderTags();
@@ -1398,6 +1452,7 @@
   }
 
   function persistQuiet() {
+    if (resetting) return;
     try { localStorage.setItem(LSKEY, JSON.stringify(S.manual)); } catch (e) {}
   }
 
@@ -1464,6 +1519,7 @@
         try { localStorage.removeItem(LSKEY); } catch (e) {}
         S.remoteDiffers = false; S.dirty = false; S.pendingSync = false; S.publishedAt = ""; S.syncError = ""; S.dirtyKeys.clear();
         updateSaveState();
+        refreshDirty();
         msg.className = "modal-msg ok";
         msg.textContent = "已切换到线上版本。";
       } catch (e) {
@@ -1693,6 +1749,7 @@
     p.dataset.for = id;
     buildNotePanel(p, v);
     row.appendChild(p);
+    markSaved();            // 面板进 DOM 之后再刷新状态，否则 .np-status 还查不到
     paintRows();
     svgResize();
 
@@ -1728,6 +1785,8 @@
 
     function mount() {
       if (ed && typeof ed.getValue === "function") cur = ed.getValue();
+      // 同一个 host 反复挂载：不销毁旧编辑器会叠加监听器（切一次模式，Tab 一下跳两级）
+      if (ed && typeof ed.destroy === "function") ed.destroy();
       body.textContent = "";
       const m = getMode();
       bW.classList.toggle("on", m === "rich");
@@ -1740,7 +1799,6 @@
       } else {
         ed = NoteEditor.createSource(body, {
           value: cur,
-          preview: false,
           onInput: (md) => { cur = md; setNote(v.id, md); },
         });
       }
@@ -1753,7 +1811,6 @@
 
     p.addEventListener("click", (ev) => ev.stopPropagation());
     mount();
-    markSaved();
   }
 
   function closeNote() {
@@ -1763,14 +1820,17 @@
     const row = S.rows[id];
     if (row) {
       const p = row.querySelector(".np");
-      if (p) p.remove();
+      if (p) {
+        if (p._editor && typeof p._editor.destroy === "function") p._editor.destroy();
+        p.remove();
+      }
       row.classList.remove("editing");
     }
     paintRows();
     svgResize();
   }
 
-  let noteT = null;
+  let noteT = null, notePersistT = null;
   function setNote(vid, md) {
     S.dirty = true;
     S.pendingSync = true;
@@ -1779,7 +1839,9 @@
     const val = String(md || "").trim();
     if (val) notes[vid] = md; else delete notes[vid];
     S.byId[vid].note = val;
-    persist();
+    // 每敲一个字就整份写 localStorage 太浪费；停手后再落盘，pagehide 里还有一次兜底
+    clearTimeout(notePersistT);
+    notePersistT = setTimeout(persist, 220);
     refreshDirty();
     scheduleSync();
     clearTimeout(noteT);
@@ -1980,8 +2042,11 @@
       $("#btnPublish").onclick = openPublish;
       $("#btnExport").onclick = exportManual;
       $("#btnReset").onclick = () => {
-        if (!confirm("放弃本地所有修订（含笔记），恢复到文件版本？")) return;
-        localStorage.removeItem(LSKEY);
+        if (!confirm("放弃本地所有修订（含笔记），恢复到文件版本？已同步到仓库的改动不会回滚。")) return;
+        resetting = true;
+        S.pendingSync = false;
+        clearTimeout(notePersistT);
+        try { localStorage.removeItem(LSKEY); } catch (e) {}
         location.reload();
       };
       $("#btnPending").onclick = () => {
@@ -1992,6 +2057,7 @@
     }
 
     document.addEventListener("keydown", (e) => {
+      if (e.isComposing || e.keyCode === 229) return;   // 输入法组字时的 Esc 不算关闭
       if (e.key !== "Escape") return;
       if (S.pick) { exitPick(); return; }
       if (S.openNote) { closeNote(); return; }

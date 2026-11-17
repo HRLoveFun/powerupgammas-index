@@ -288,8 +288,15 @@ def main():
     css = open(os.path.join(WEB, "styles.css")).read()
     note = open(os.path.join(WEB, "note.js")).read()
     js = open(os.path.join(WEB, "app.js")).read()
-    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    man = json.dumps(manual, ensure_ascii=False, separators=(",", ":"))
+    # 内联进 <script> 的 JSON：把 < 转成 \u003c，否则笔记里出现 </script> 会截断脚本、整页白屏
+    def js_json(obj):
+        return (json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+                .replace("<", "\\u003c")
+                .replace("\u2028", "\\u2028")
+                .replace("\u2029", "\\u2029"))
+
+    data = js_json(payload)
+    man = js_json(manual)
 
     # 同一套源码构建两个页面：公开版 / 开发版
     built = []
