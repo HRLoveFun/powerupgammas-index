@@ -313,9 +313,86 @@
     }
   }
 
+
+  /* ---------------- 源码编辑器（Markdown + 实时预览） ---------------- */
+  function applyIndent(ta, outdent) {
+    const v = ta.value;
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const lineStart = v.lastIndexOf("\n", s - 1) + 1;
+    const multi = v.slice(s, e).indexOf("\n") >= 0;
+
+    if (!multi) {
+      if (outdent) {
+        const before = v.slice(lineStart, s);
+        const m = before.match(/ {1,2}$/);
+        if (!m) return;
+        ta.value = v.slice(0, s - m[0].length) + v.slice(s);
+        ta.setSelectionRange(s - m[0].length, s - m[0].length);
+      } else {
+        ta.value = v.slice(0, s) + "  " + v.slice(e);
+        ta.setSelectionRange(s + 2, s + 2);
+      }
+      return;
+    }
+
+    const block = v.slice(lineStart, e);
+    const lines = block.split("\n");
+    const changed = lines.map((l) => (outdent ? l.replace(/^ {1,2}/, "") : "  " + l)).join("\n");
+    ta.value = v.slice(0, lineStart) + changed + v.slice(e);
+    ta.setSelectionRange(lineStart, lineStart + changed.length);
+  }
+
+  function createSource(host, opts) {
+    opts = opts || {};
+    host.classList.add("ns");
+    host.textContent = "";
+
+    const ta = document.createElement("textarea");
+    ta.className = "ns-src";
+    ta.spellcheck = false;
+    ta.value = opts.value || "";
+    ta.placeholder = opts.placeholder || "写点什么……支持 Markdown：# 标题、- 列表、> 引用、**粗体**、`代码`";
+
+    const prev = document.createElement("div");
+    prev.className = "ns-prev";
+    host.append(ta, prev);
+
+    const autosize = () => {
+      ta.style.height = "auto";
+      ta.style.height = Math.min(Math.max(ta.scrollHeight, 92), 460) + "px";
+    };
+    const paint = () => {
+      const v = ta.value;
+      prev.innerHTML = v.trim() ? render(v) : '<span class="ns-empty">预览区</span>';
+      autosize();
+    };
+
+    ta.addEventListener("input", () => {
+      paint();
+      if (opts.onInput) opts.onInput(ta.value);
+    });
+    ta.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab") return;
+      e.preventDefault();
+      applyIndent(ta, e.shiftKey);
+      paint();
+      if (opts.onInput) opts.onInput(ta.value);
+    });
+
+    paint();
+    return {
+      getValue: () => ta.value,
+      focus: () => setTimeout(() => {
+        ta.focus();
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+      }, 40),
+    };
+  }
+
   global.NoteEditor = {
     render, parseMd, blocksToMd, inlineToHtml, Editor,
     create(host, opts) { return new Editor(host, opts); },
+    createSource,
     isEmpty(md) { return !String(md || "").trim(); },
   };
 })(window);

@@ -94,9 +94,10 @@
     ad.forEach((t) => {
       if (S.tagById[t] && out.indexOf(t) < 0) out.push(t);
     });
-    const hasPlaylist = out.some((t) => S.tagById[t] && S.tagById[t].source === "playlist");
+    // 仅当这一期没有任何实际标签时才归入「未归类」
     out = out.filter((t) => t !== "unfiled");
-    if (!hasPlaylist) out.push("unfiled");
+    const named = out.some((t) => S.tagById[t] && S.tagById[t].source !== "system");
+    if (!named) out.push("unfiled");
     return out;
   }
 
@@ -1702,7 +1703,7 @@
   function buildNotePanel(p, v) {
     const bar = el("div", "np-bar");
     bar.appendChild(el("span", "np-label", "笔记"));
-    bar.appendChild(el("span", "np-tip", "Markdown：# 标题　- 列表　> 引用　**粗体**　`代码`"));
+    bar.appendChild(el("span", "np-tip", "Markdown 源码 · Tab 缩进 / Shift+Tab 退回"));
     bar.appendChild(el("span", "np-status", ""));
     const done = el("button", "ghost sm np-done", "完成");
     done.onclick = (ev) => { ev.stopPropagation(); closeNote(); };
@@ -1712,7 +1713,7 @@
     const body = el("div", "np-body");
     p.appendChild(body);
 
-    const ed = NoteEditor.create(body, {
+    const ed = NoteEditor.createSource(body, {
       value: v.note || "",
       onInput: (md) => setNote(v.id, md),
     });

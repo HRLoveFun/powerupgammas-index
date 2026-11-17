@@ -4,7 +4,7 @@
   "id": "UCTb0BeBF6L7l2JsebTauH0Q",
   "url": "https://www.youtube.com/@PowerUpGammas"
  },
- "generatedAt": "2026-11-17 19:31",
+ "generatedAt": "2026-11-17 21:18",
  "total": 380,
  "videos": [
   {
@@ -4636,6 +4636,13 @@
    "label": "年度总结",
    "full": "",
    "color": "#4a90d9",
+   "source": "manual"
+  },
+  {
+   "id": "PLFzeuKbRQ3c0SPg4JsJzgnASUAi8vRlhu",
+   "label": "通知",
+   "full": "",
+   "color": "#d97b93",
    "source": "manual"
   },
   {
