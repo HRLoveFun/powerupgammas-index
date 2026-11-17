@@ -538,3 +538,36 @@ button.ghost .cnt{
   box-shadow:0 16px 40px rgba(0,0,0,.6);
 }
 .storagewarn b{color:#f0a8a8;margin-right:4px}
+
+/* ---------- 提交对话框 ---------- */
+.modal{
+  position:fixed;inset:0;z-index:120;background:rgba(4,5,7,.68);
+  display:flex;align-items:center;justify-content:center;padding:18px;
+  backdrop-filter:blur(3px);
+}
+.modal-box{
+  width:min(468px,100%);background:#111418;border:1px solid #2c3138;
+  border-radius:12px;padding:18px 20px 16px;box-shadow:0 26px 70px rgba(0,0,0,.72);
+}
+.modal-box h3{margin:0 0 6px;font-size:15px;font-weight:620}
+.modal-hint{margin:0 0 14px;font-size:11.5px;line-height:1.62;color:#7d848e}
+.modal label{display:block;margin-bottom:10px;font-size:11px;color:#8b939d;letter-spacing:.03em}
+.modal label input{
+  display:block;width:100%;margin-top:5px;height:33px;padding:0 9px;
+  border-radius:6px;border:1px solid #232830;background:#0c0f12;color:#e6e3de;
+  font-family:var(--mono);font-size:12.5px;outline:0;
+}
+.modal label input:focus{border-color:#3a424c}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
+.modal-actions .ghost{order:1}
+.modal-actions .primary{order:3}
+.modal-msg{margin-top:10px;font-size:11.5px;line-height:1.6;color:#e08a8a}
+.modal-msg.ok{color:#7fbf7f}
+.modal-msg:empty{display:none}
+button.primary{
+  height:30px;padding:0 14px;border-radius:7px;cursor:pointer;border:1px solid #2f6fd0;
+  background:#1f6feb;color:#fff;font-family:var(--sans);font-size:12.5px;transition:.16s;
+}
+button.primary:hover{background:#2b7bf5}
+button.primary:disabled{opacity:.6;cursor:default}
+.savestate.warn{color:#e0b45a}
