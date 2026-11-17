@@ -33,7 +33,7 @@
     dirty: false,          // 尚未来得及落盘
     pendingSync: false,    // 有改动还没推到远端
     remoteDiffers: false,   // 本地改动与线上版本不一致
-    dirtyKeys: new Set(),   // 自上次同步以来改动过的视频 id
+    dirtyKeys: new Set(),   // 自上次同步以来改动的字段，形如 "notes:<id>"
     publishedAt: "",
   };
 
@@ -1054,7 +1054,7 @@
   function setTag(vid, tagId, on) {
     S.dirty = true;
     S.pendingSync = true;
-    S.dirtyKeys.add(vid);
+    S.dirtyKeys.add("tags:" + vid);
     const m = S.manual.tags;
     const rule = m[vid] || (m[vid] = { add: [], remove: [] });
     rule.add = rule.add || []; rule.remove = rule.remove || [];
@@ -1074,7 +1074,7 @@
     const before = S.manual.refs[vid] ? JSON.parse(JSON.stringify(S.manual.refs[vid])) : null;
     S.dirty = true;
     S.pendingSync = true;
-    S.dirtyKeys.add(vid);
+    S.dirtyKeys.add("refs:" + vid);
     const m = S.manual.refs;
     const rule = m[vid] || (m[vid] = { add: [], remove: [] });
     rule.add = rule.add || []; rule.remove = rule.remove || [];
@@ -1104,7 +1104,7 @@
     else delete S.manual.refs[u.vid];
     S.dirty = true;
     S.pendingSync = true;
-    S.dirtyKeys.add(u.vid);
+    S.dirtyKeys.add("refs:" + u.vid);
     commit();
     refreshRefs(u.vid);
     toast("已撤销");
@@ -1209,9 +1209,13 @@
   // 只把「本机改动过的条目」盖到远端版本上，避免多设备互相覆盖
   function mergeManual(remote, local, keys) {
     const out = JSON.parse(JSON.stringify(remote || {}));
+    // keys 形如 "notes:<id>"，只覆盖本机真正改过的那个字段
     ["tags", "refs", "notes"].forEach((k) => {
       out[k] = out[k] || {};
-      keys.forEach((id) => {
+      keys.forEach((key) => {
+        const p = key.indexOf(":");
+        if (p < 0 || key.slice(0, p) !== k) return;
+        const id = key.slice(p + 1);
         if (local[k] && local[k][id] !== undefined) out[k][id] = local[k][id];
         else delete out[k][id];
       });
@@ -1221,8 +1225,9 @@
     (local.tagDefs || []).forEach((d) => defs.set(d.id, d));
     out.tagDefs = Array.from(defs.values());
     out.pendingDismissed = Array.from(new Set([].concat(out.pendingDismissed || [], local.pendingDismissed || [])));
-    if (local._comment) out._comment = local._comment;
-    if (local._schema) out._schema = local._schema;
+    // 文件头的说明字段以仓库里的为准，避免浏览器用旧副本覆盖文档
+    if (!out._comment && local._comment) out._comment = local._comment;
+    if (!out._schema && local._schema) out._schema = local._schema;
     return out;
   }
 
@@ -1283,7 +1288,7 @@
       const r = (remote && remote[k]) || {};
       const l = local[k] || {};
       new Set(Object.keys(r).concat(Object.keys(l))).forEach((id) => {
-        if (JSON.stringify(r[id]) !== JSON.stringify(l[id])) keys.add(id);
+        if (JSON.stringify(r[id]) !== JSON.stringify(l[id])) keys.add(k + ":" + id);
       });
     });
     return Array.from(keys);
@@ -1717,7 +1722,7 @@
   function setNote(vid, md) {
     S.dirty = true;
     S.pendingSync = true;
-    S.dirtyKeys.add(vid);
+    S.dirtyKeys.add("notes:" + vid);
     const notes = S.manual.notes || (S.manual.notes = {});
     const val = String(md || "").trim();
     if (val) notes[vid] = md; else delete notes[vid];
